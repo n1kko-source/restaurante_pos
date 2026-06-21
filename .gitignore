@@ -21,3 +21,5 @@ dist/
 # Exportes generados
 reports/output/*.pdf
 reports/output/*.xlsx
+
+Nota_de_Contexto_del_Proyecto.md
