@@ -1,0 +1,1 @@
+-- Contrato único de la base de datos: definición de todas las tablas.

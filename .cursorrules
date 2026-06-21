@@ -1,0 +1,92 @@
+# Reglas del proyecto — Sistema POS Restaurante
+
+## Contexto crítico
+- Este sistema corre 100% OFFLINE. NUNCA sugieras llamadas a APIs externas,
+  fetch, requests a internet, ni librerías que requieran conexión de red.
+- Hardware objetivo: HP Pavilion dv4, Core 2 Duo, 2-4GB RAM, Windows Vista
+  Basic. Evita cargar datasets completos en memoria.
+- Python 3.9 — NO uses sintaxis de versiones posteriores (no match/case,
+  no | en type hints, no walrus operator agresivo si dificulta lectura).
+
+## Stack obligatorio (no sugerir alternativas)
+- UI: CustomTkinter 5.2.2 — para botones, labels, entries, frames, diálogos,
+  sidebar. TODO lo interactivo y decorativo va en CTk.
+- Tablas de datos: ttk.Treeview nativo, ÚNICA excepción a CTk. Regla simple:
+  si es un listado de registros (cualquiera: productos, pedidos, facturas,
+  cierres, lo que sea), es Treeview. Si no es un listado de registros (ej.
+  un selector de fecha tipo calendario), puede ir en CTk; si CTk no lo
+  soporta nativamente, aplica la regla de "dependencias nuevas" más abajo
+  antes de introducir un widget de terceros.
+- DB: SQLite3 vía sqlite3 estándar de Python. NO usar SQLAlchemy ni ORMs.
+- Impresora: python-escpos 3.1, protocolo ESC/POS. Conexión SIEMPRE por
+  puerto serial COM o USB, nunca por red/IP. Configuración centralizada en
+  config.py según el dict IMPRESORA.
+- PDF: reportlab 4.1.0. Excel: openpyxl 3.1.2.
+- Passwords: bcrypt 4.1.2. NUNCA texto plano, NUNCA md5/sha1.
+
+## Arquitectura — capas y flujo de datos
+UI (ui/) -> Services (services/) -> Database (database/)
+Models (models/) son DTOs que viajan entre capas — NO son una capa de
+llamadas intermedia.
+
+- database/db_manager.py contiene TODO el SQL (queries, conexión, CRUD).
+- models/ contiene SOLO clases de datos (dataclasses o clases simples):
+  Usuario, Producto, Mesa, Pedido, Factura, Cierre. Sin SQL, sin conexión,
+  sin lógica de acceso a datos. NUNCA importan sqlite3 ni database/.
+- services/ es el único que llama a database/db_manager.py, y usa/devuelve
+  instancias de models/ para pasar datos entre capas.
+- Las ventanas (ui/) NUNCA hacen queries SQL directas, siempre pasan por
+  el service correspondiente.
+- services/ NUNCA importa CustomTkinter ni nada de ui/.
+
+## Control de acceso — @requiere_rol
+- Definido en services/auth_service.py.
+- En UI: decora la función que abre cada ventana (primera línea de
+  defensa). UI puede importar el decorador desde services/ — coherente
+  con el flujo de capas.
+- En Services: decora además funciones que modifican datos sensibles
+  (eliminar usuario, cierre mensual, cambios de configuración), como
+  defensa en profundidad.
+- Usuario autenticado vive en una variable de sesión simple dentro de
+  auth_service.py (ej. usuario_actual), seteada en el login. Sistema de
+  un solo usuario activo por equipo — no se requieren tokens ni sesiones
+  concurrentes.
+
+## Paginación
+- Pantalla (Treeview): SIEMPRE paginar. Tamaño de página por defecto: 50
+  filas. Usar LIMIT/OFFSET en la query, nunca cargar todo y recortar en
+  Python.
+- PDF/Excel: sin carga incremental, pero cada reporte está acotado a un
+  rango de fechas (diario o mensual) — nunca "todo el histórico" en un
+  solo documento.
+
+## schema.sql como contrato
+- database/schema.sql es la fuente de verdad de la base de datos.
+- Si el código ya implementado entra en conflicto con schema.sql: se
+  corrige el código para alinearlo con el schema, NO al revés.
+- Excepción: si la discrepancia revela un error real en el propio schema
+  (ej. constraint que rompe un caso de negocio válido), se reporta la
+  discrepancia y se pide aprobación explícita antes de modificar
+  schema.sql. El schema nunca se cambia en silencio.
+
+## Dependencias
+- Parche de versión (mismo major.minor, ej. bcrypt 4.1.2 -> 4.1.3) por
+  fix de seguridad documentado: se puede aplicar y avisar, sin bloquear
+  para preguntar.
+- Librería nueva, o cambio de minor/major: SIEMPRE preguntar antes de
+  agregarla, sin excepción.
+
+## Convenciones de código
+- Nombres de variables, funciones y comentarios en español, consistente
+  con el dominio del negocio (mesa, pedido, factura — no order/invoice).
+- Cada función pública lleva docstring breve explicando qué hace.
+- Manejo de errores explícito con try/except en operaciones de DB e
+  impresora — nunca dejar que una excepción de la impresora tumbe el POS.
+- Copiar nombre_producto en pedido_items y factura_detalles (no solo el
+  FK), según regla de histórico ya definida en el schema.
+
+## Al modificar código existente
+- Mostrar SOLO el bloque modificado con `# ... código existente ...` para
+  el resto. No reescribir archivos completos si no es necesario.
+- No introducir nuevas dependencias sin preguntar primero (ver sección
+  Dependencias).

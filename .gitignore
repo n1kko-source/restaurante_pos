@@ -1,0 +1,23 @@
+# Entorno virtual
+venv/
+__pycache__/
+*.pyc
+
+# Base de datos local (cada equipo genera la suya)
+database/restaurante.db
+database/*.db-journal
+database/*.db-wal
+database/*.db-shm
+
+# Build / distribución
+build/
+dist/
+*.spec
+
+# Cursor / IDE
+.cursor/
+.vscode/
+
+# Exportes generados
+reports/output/*.pdf
+reports/output/*.xlsx
