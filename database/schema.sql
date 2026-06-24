@@ -1,5 +1,5 @@
 -- ============================================================
--- schema.sql — Sistema POS Restaurante
+-- schema.sql — Sistema POS Offline Restaurante 
 -- Contrato único de base de datos (ver .cursorrules: schema.sql
 -- es la fuente de verdad; el código se ajusta a él, no al revés)
 -- ============================================================
