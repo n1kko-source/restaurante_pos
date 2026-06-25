@@ -6,6 +6,16 @@ import customtkinter as ctk
 
 from database.db_manager import init_db
 from services import auth_service
+from ui.tema import (
+    PALETA,
+    aplicar_tema_global,
+    centrar_ventana,
+    fuente_boton,
+    fuente_normal,
+    fuente_pequena,
+    fuente_subtitulo,
+    fuente_titulo,
+)
 from ui.ventana_principal import VentanaPrincipal
 
 # Nombres en español para el reloj (sin depender de locale del SO).
@@ -18,6 +28,10 @@ _MESES = (
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 )
 
+_ANCHO_VENTANA = 480
+_ALTO_VENTANA = 560
+_ANCHO_TARJETA = 380
+
 
 class VentanaLogin(ctk.CTk):
     """
@@ -27,18 +41,16 @@ class VentanaLogin(ctk.CTk):
     """
 
     def __init__(self):
+        aplicar_tema_global()
         super().__init__()
-
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
 
         init_db()
 
         self.title("Sistema POS — Inicio de sesión")
-        self.geometry("440x520")
         self.resizable(False, False)
+        self.configure(fg_color=PALETA["fondo"])
+        centrar_ventana(self, _ANCHO_VENTANA, _ALTO_VENTANA)
 
-        # Bloquea el botón X de la ventana hasta autenticarse.
         self.protocol("WM_DELETE_WINDOW", self._bloquear_cierre)
 
         self._id_reloj = None
@@ -49,49 +61,70 @@ class VentanaLogin(ctk.CTk):
         self.bind("<Return>", self._on_enter)
 
     def _construir_ui(self) -> None:
-        """Construye los widgets de la pantalla de login."""
-        marco = ctk.CTkFrame(self, fg_color="transparent")
-        marco.pack(expand=True, fill="both", padx=40, pady=30)
+        """Construye la tarjeta de login centrada en pantalla."""
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+        tarjeta = ctk.CTkFrame(
+            self,
+            fg_color=PALETA["tarjeta"],
+            corner_radius=16,
+            border_width=1,
+            border_color=PALETA["borde"],
+        )
+        tarjeta.grid(row=0, column=0)
+
+        marco = ctk.CTkFrame(tarjeta, fg_color="transparent")
+        marco.pack(expand=True, fill="both", padx=36, pady=36)
 
         ctk.CTkLabel(
             marco,
             text="Sistema POS",
-            font=ctk.CTkFont(size=26, weight="bold"),
+            font=fuente_titulo(),
+            text_color=PALETA["texto"],
         ).pack(pady=(0, 4))
 
         ctk.CTkLabel(
             marco,
             text="Restaurante Hogareños",
-            font=ctk.CTkFont(size=14),
-            text_color="gray70",
-        ).pack(pady=(0, 24))
+            font=fuente_subtitulo(),
+            text_color=PALETA["texto_suave"],
+        ).pack(pady=(0, 20))
 
         self.label_reloj = ctk.CTkLabel(
             marco,
             text="",
-            font=ctk.CTkFont(size=13),
-            text_color="#4da3ff",
+            font=fuente_pequena(),
+            text_color=PALETA["acento"],
+            wraplength=_ANCHO_TARJETA - 72,
+            justify="center",
         )
-        self.label_reloj.pack(pady=(0, 28))
+        self.label_reloj.pack(pady=(0, 24))
 
         ctk.CTkLabel(
             marco,
             text="Usuario",
-            font=ctk.CTkFont(size=13),
+            font=fuente_normal(),
+            text_color=PALETA["texto"],
             anchor="w",
         ).pack(fill="x", pady=(0, 4))
 
         self.entry_usuario = ctk.CTkEntry(
             marco,
             placeholder_text="Nombre de usuario",
-            height=38,
+            height=42,
+            corner_radius=10,
+            border_color=PALETA["entrada_borde"],
+            fg_color=PALETA["entrada_fondo"],
+            text_color=PALETA["texto"],
         )
-        self.entry_usuario.pack(fill="x", pady=(0, 16))
+        self.entry_usuario.pack(fill="x", pady=(0, 14))
 
         ctk.CTkLabel(
             marco,
             text="Contraseña",
-            font=ctk.CTkFont(size=13),
+            font=fuente_normal(),
+            text_color=PALETA["texto"],
             anchor="w",
         ).pack(fill="x", pady=(0, 4))
 
@@ -99,17 +132,20 @@ class VentanaLogin(ctk.CTk):
             marco,
             placeholder_text="Contraseña",
             show="*",
-            height=38,
+            height=42,
+            corner_radius=10,
+            border_color=PALETA["entrada_borde"],
+            fg_color=PALETA["entrada_fondo"],
+            text_color=PALETA["texto"],
         )
         self.entry_password.pack(fill="x", pady=(0, 8))
 
-        # Reserva espacio fijo para no mover el layout al mostrar errores.
         self.label_error = ctk.CTkLabel(
             marco,
             text=" ",
-            font=ctk.CTkFont(size=12),
-            text_color="#e74c3c",
-            wraplength=340,
+            font=fuente_pequena(),
+            text_color=PALETA["error"],
+            wraplength=_ANCHO_TARJETA - 72,
             justify="center",
         )
         self.label_error.pack(fill="x", pady=(4, 12))
@@ -117,11 +153,15 @@ class VentanaLogin(ctk.CTk):
         self.btn_login = ctk.CTkButton(
             marco,
             text="Iniciar sesión",
-            height=42,
-            font=ctk.CTkFont(size=14, weight="bold"),
+            height=44,
+            corner_radius=10,
+            font=fuente_boton(),
+            fg_color=PALETA["boton_primario"],
+            hover_color=PALETA["boton_primario_hover"],
+            text_color="#ffffff",
             command=self._intentar_login,
         )
-        self.btn_login.pack(fill="x", pady=(0, 8))
+        self.btn_login.pack(fill="x")
 
     def _formatear_fecha_hora(self, momento: datetime) -> str:
         """Formatea fecha y hora en español para el reloj digital."""
@@ -140,7 +180,7 @@ class VentanaLogin(ctk.CTk):
         """Impide cerrar la ventana sin autenticarse."""
         self.label_error.configure(
             text="Debe iniciar sesión para usar el sistema.",
-            text_color="#e74c3c",
+            text_color=PALETA["error"],
         )
         self.entry_password.focus()
 
@@ -150,7 +190,7 @@ class VentanaLogin(ctk.CTk):
 
     def _limpiar_error(self) -> None:
         """Oculta el mensaje de error."""
-        self.label_error.configure(text=" ", text_color="#e74c3c")
+        self.label_error.configure(text=" ", text_color=PALETA["error"])
 
     def _intentar_login(self) -> None:
         """Valida credenciales y abre la ventana principal si son correctas."""
@@ -162,7 +202,7 @@ class VentanaLogin(ctk.CTk):
         try:
             usuario_auth = auth_service.login(usuario, password)
         except ValueError as error:
-            self.label_error.configure(text=str(error), text_color="#e74c3c")
+            self.label_error.configure(text=str(error), text_color=PALETA["error"])
             self.entry_password.delete(0, "end")
             self.entry_password.focus()
             return

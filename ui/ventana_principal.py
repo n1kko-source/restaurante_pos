@@ -3,6 +3,15 @@
 import customtkinter as ctk
 
 from models.usuario import Usuario
+from ui.tema import (
+    PALETA,
+    aplicar_tema_global,
+    centrar_ventana,
+    fuente_normal,
+    fuente_pequena,
+    fuente_subtitulo,
+    fuente_titulo,
+)
 
 # Opciones del menú lateral: (etiqueta, roles permitidos).
 _OPCIONES_MENU = [
@@ -15,6 +24,9 @@ _OPCIONES_MENU = [
     ("Configuración", ("administrador",)),
 ]
 
+_ANCHO_VENTANA = 1100
+_ALTO_VENTANA = 680
+
 
 class VentanaPrincipal(ctk.CTk):
     """
@@ -23,93 +35,203 @@ class VentanaPrincipal(ctk.CTk):
     """
 
     def __init__(self, usuario: Usuario):
+        aplicar_tema_global()
         super().__init__()
 
         self.usuario = usuario
+        self._opcion_activa = None
+        self._botones_menu = {}
 
         self.title(f"Sistema POS — {usuario.nombre}")
-        self.geometry("1024x640")
         self.minsize(900, 560)
+        self.configure(fg_color=PALETA["fondo"])
+        centrar_ventana(self, _ANCHO_VENTANA, _ALTO_VENTANA)
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
+
+        self._modulo_actual = None
+        self._contenedor_modulo = None
 
         self._construir_sidebar()
         self._construir_area_contenido()
 
     def _construir_sidebar(self) -> None:
         """Construye la barra lateral con opciones según rol."""
-        sidebar = ctk.CTkFrame(self, width=200, corner_radius=0)
+        sidebar = ctk.CTkFrame(
+            self,
+            width=220,
+            corner_radius=0,
+            fg_color=PALETA["sidebar"],
+            border_width=0,
+        )
         sidebar.grid(row=0, column=0, sticky="nsew")
         sidebar.grid_rowconfigure(20, weight=1)
+
+        ctk.CTkFrame(
+            sidebar,
+            width=1,
+            fg_color=PALETA["sidebar_borde"],
+            corner_radius=0,
+        ).grid(row=0, column=1, rowspan=22, sticky="ns")
 
         ctk.CTkLabel(
             sidebar,
             text="Sistema POS",
             font=ctk.CTkFont(size=18, weight="bold"),
-        ).grid(row=0, column=0, padx=16, pady=(20, 4), sticky="w")
+            text_color=PALETA["texto"],
+        ).grid(row=0, column=0, padx=20, pady=(24, 4), sticky="w")
 
         ctk.CTkLabel(
             sidebar,
             text=self.usuario.nombre,
-            font=ctk.CTkFont(size=12),
-            text_color="gray70",
-            wraplength=168,
+            font=fuente_pequena(),
+            text_color=PALETA["texto_suave"],
+            wraplength=180,
             justify="left",
-        ).grid(row=1, column=0, padx=16, pady=(0, 2), sticky="w")
+        ).grid(row=1, column=0, padx=20, pady=(0, 2), sticky="w")
 
         ctk.CTkLabel(
             sidebar,
             text=f"Rol: {self.usuario.rol}",
             font=ctk.CTkFont(size=11),
-            text_color="gray60",
-        ).grid(row=2, column=0, padx=16, pady=(0, 16), sticky="w")
+            text_color=PALETA["texto_suave"],
+        ).grid(row=2, column=0, padx=20, pady=(0, 20), sticky="w")
 
         fila = 3
         for etiqueta, roles in _OPCIONES_MENU:
             if self.usuario.rol not in roles:
                 continue
-            ctk.CTkButton(
+            comando = self._comando_menu(etiqueta)
+            boton = ctk.CTkButton(
                 sidebar,
                 text=etiqueta,
                 anchor="w",
-                height=36,
+                height=40,
+                corner_radius=10,
+                font=fuente_normal(),
                 fg_color="transparent",
-                text_color=("gray10", "gray90"),
-                hover_color=("gray70", "gray30"),
-            ).grid(row=fila, column=0, padx=12, pady=2, sticky="ew")
+                text_color=PALETA["sidebar_texto"],
+                hover_color=PALETA["sidebar_hover"],
+                command=lambda e=etiqueta, c=comando: self._al_elegir_menu(e, c),
+            )
+            boton.grid(row=fila, column=0, padx=14, pady=3, sticky="ew")
+            self._botones_menu[etiqueta] = boton
             fila += 1
 
         ctk.CTkButton(
             sidebar,
             text="Cerrar sesión",
-            height=36,
-            fg_color="#8b0000",
-            hover_color="#a52a2a",
+            height=40,
+            corner_radius=10,
+            font=fuente_normal(),
+            fg_color=PALETA["cerrar_sesion"],
+            hover_color=PALETA["cerrar_sesion_hover"],
+            text_color="#ffffff",
             command=self._cerrar_sesion,
-        ).grid(row=21, column=0, padx=12, pady=(8, 20), sticky="ew")
+        ).grid(row=21, column=0, padx=14, pady=(8, 24), sticky="ew")
+
+    def _al_elegir_menu(self, etiqueta: str, comando) -> None:
+        """Resalta la opción activa y ejecuta su acción."""
+        self._marcar_opcion_activa(etiqueta)
+        if comando is not None:
+            comando()
+
+    def _marcar_opcion_activa(self, etiqueta: str) -> None:
+        """Actualiza el estilo visual del ítem de menú seleccionado."""
+        self._opcion_activa = etiqueta
+        for nombre, boton in self._botones_menu.items():
+            if nombre == etiqueta:
+                boton.configure(
+                    fg_color=PALETA["sidebar_activo"],
+                    text_color=PALETA["acento"],
+                )
+            else:
+                boton.configure(
+                    fg_color="transparent",
+                    text_color=PALETA["sidebar_texto"],
+                )
 
     def _construir_area_contenido(self) -> None:
-        """Área central de bienvenida; los módulos se abrirán en sprints posteriores."""
-        contenido = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
-        contenido.grid(row=0, column=1, sticky="nsew", padx=24, pady=24)
+        """Área central donde se cargan los módulos del sistema."""
+        self._contenedor_modulo = ctk.CTkFrame(
+            self,
+            corner_radius=0,
+            fg_color=PALETA["fondo"],
+        )
+        self._contenedor_modulo.grid(row=0, column=1, sticky="nsew", padx=16, pady=16)
+        self._contenedor_modulo.grid_columnconfigure(0, weight=1)
+        self._contenedor_modulo.grid_rowconfigure(0, weight=1)
+        self._mostrar_bienvenida()
+
+    def _comando_menu(self, etiqueta: str):
+        """Retorna el callback del menú lateral según la opción."""
+        comandos = {
+            "Mesas": self._abrir_mesas,
+        }
+        return comandos.get(etiqueta)
+
+    def _limpiar_modulo(self) -> None:
+        """Destruye el módulo activo en el área de contenido."""
+        if self._modulo_actual is not None:
+            self._modulo_actual.destroy()
+            self._modulo_actual = None
+
+    def _mostrar_bienvenida(self) -> None:
+        """Muestra la pantalla de bienvenida en el área central."""
+        self._limpiar_modulo()
+        self._marcar_opcion_activa("")
+
+        contenedor = ctk.CTkFrame(self._contenedor_modulo, fg_color=PALETA["fondo"])
+        contenedor.grid(row=0, column=0, sticky="nsew")
+        contenedor.grid_rowconfigure(0, weight=1)
+        contenedor.grid_columnconfigure(0, weight=1)
+        self._modulo_actual = contenedor
+
+        tarjeta = ctk.CTkFrame(
+            contenedor,
+            fg_color=PALETA["tarjeta"],
+            corner_radius=16,
+            border_width=1,
+            border_color=PALETA["borde"],
+        )
+        tarjeta.grid(row=0, column=0)
+        tarjeta.grid_propagate(True)
+
+        marco = ctk.CTkFrame(tarjeta, fg_color="transparent")
+        marco.pack(padx=48, pady=40)
 
         ctk.CTkLabel(
-            contenido,
+            marco,
             text=f"Bienvenido, {self.usuario.nombre}",
-            font=ctk.CTkFont(size=22, weight="bold"),
-        ).pack(anchor="w", pady=(0, 8))
+            font=fuente_titulo(),
+            text_color=PALETA["texto"],
+        ).pack(pady=(0, 10))
 
         ctk.CTkLabel(
-            contenido,
+            marco,
             text=(
                 "Seleccione una opción del menú lateral para comenzar.\n"
                 f"Su rol actual es: {self.usuario.rol}."
             ),
-            font=ctk.CTkFont(size=14),
-            text_color="gray70",
-            justify="left",
-        ).pack(anchor="w")
+            font=fuente_subtitulo(),
+            text_color=PALETA["texto_suave"],
+            justify="center",
+        ).pack()
+
+    def _abrir_mesas(self) -> None:
+        """Abre el mapa visual del salón."""
+        from tkinter import messagebox
+
+        from services.auth_service import ErrorAcceso
+        from ui.ventana_mesas import mostrar_en
+
+        self._limpiar_modulo()
+        try:
+            self._modulo_actual = mostrar_en(self._contenedor_modulo)
+        except ErrorAcceso as error:
+            messagebox.showerror("Acceso denegado", str(error))
+            self._mostrar_bienvenida()
 
     def _cerrar_sesion(self) -> None:
         """Cierra la sesión y regresa a la pantalla de login."""
