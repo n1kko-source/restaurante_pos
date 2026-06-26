@@ -4,7 +4,6 @@ from datetime import datetime
 
 import customtkinter as ctk
 
-from database.db_manager import init_db
 from services import auth_service
 from ui.tema import (
     PALETA,
@@ -43,8 +42,6 @@ class VentanaLogin(ctk.CTk):
     def __init__(self):
         aplicar_tema_global()
         super().__init__()
-
-        init_db()
 
         self.title("Sistema POS — Inicio de sesión")
         self.resizable(False, False)
