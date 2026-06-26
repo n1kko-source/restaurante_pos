@@ -21,3 +21,20 @@ class Producto:
     def esta_activo(self) -> bool:
         """Retorna True si el producto está disponible en el menú."""
         return self.activo == 1
+
+
+@dataclass
+class ProductoListado:
+    """Producto con nombre de categoría para listados en Treeview."""
+
+    id: int
+    categoria_id: int
+    nombre_categoria: str
+    nombre: str
+    precio: int
+    stock: int
+    activo: int
+
+    def esta_activo(self) -> bool:
+        """Retorna True si el producto está disponible en el menú."""
+        return self.activo == 1

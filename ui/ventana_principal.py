@@ -168,6 +168,7 @@ class VentanaPrincipal(ctk.CTk):
         """Retorna el callback del menú lateral según la opción."""
         comandos = {
             "Mesas": self._abrir_mesas,
+            "Menú": self._abrir_menu,
         }
         return comandos.get(etiqueta)
 
@@ -225,6 +226,20 @@ class VentanaPrincipal(ctk.CTk):
 
         from services.auth_service import ErrorAcceso
         from ui.ventana_mesas import mostrar_en
+
+        self._limpiar_modulo()
+        try:
+            self._modulo_actual = mostrar_en(self._contenedor_modulo)
+        except ErrorAcceso as error:
+            messagebox.showerror("Acceso denegado", str(error))
+            self._mostrar_bienvenida()
+
+    def _abrir_menu(self) -> None:
+        """Abre la gestión de productos y categorías del menú."""
+        from tkinter import messagebox
+
+        from services.auth_service import ErrorAcceso
+        from ui.ventana_menu import mostrar_en
 
         self._limpiar_modulo()
         try:
