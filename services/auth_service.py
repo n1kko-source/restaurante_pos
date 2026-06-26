@@ -30,6 +30,7 @@ class ErrorAcceso(Exception):
 # ============================================================
 
 _usuario_actual: Optional[Usuario] = None
+_alerta_inventario_pendiente: Optional[str] = None
 
 
 def obtener_usuario_actual() -> Optional[Usuario]:
@@ -80,13 +81,29 @@ def login(usuario: str, password: str) -> Usuario:
         usuario=fila["usuario"],
         rol=fila["rol"],
     )
+    from services import inventario_service
+
+    global _alerta_inventario_pendiente
+    _alerta_inventario_pendiente = inventario_service.verificar_alerta_dominical()
     return _usuario_actual
+
+
+def consumir_alerta_inventario() -> Optional[str]:
+    """
+    Retorna el mensaje de alerta dominical pendiente (si hay) y lo limpia.
+    La UI debe mostrar el popup y llamar a esta función una sola vez tras el login.
+    """
+    global _alerta_inventario_pendiente
+    mensaje = _alerta_inventario_pendiente
+    _alerta_inventario_pendiente = None
+    return mensaje
 
 
 def cerrar_sesion() -> None:
     """Cierra la sesión del usuario actual, limpiando la variable de sesión."""
-    global _usuario_actual
+    global _usuario_actual, _alerta_inventario_pendiente
     _usuario_actual = None
+    _alerta_inventario_pendiente = None
 
 
 # ============================================================
