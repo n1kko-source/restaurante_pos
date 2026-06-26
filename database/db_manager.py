@@ -487,6 +487,15 @@ def eliminar_item_pedido(id: int) -> None:
 # FACTURAS — contador atómico y transacción completa
 # ============================================================
 
+def obtener_ultimo_numero_factura(fecha: str) -> int:
+    """Retorna el último número de factura reservado para una fecha (0 si no hay)."""
+    with _conexion() as con:
+        fila = con.execute(
+            "SELECT ultimo_numero FROM contador_facturas WHERE fecha=?", (fecha,)
+        ).fetchone()
+        return fila[0] if fila is not None else 0
+
+
 def _siguiente_numero_factura_tx(con: sqlite3.Connection, fecha: str) -> str:
     """
     Genera y reserva el siguiente número de factura para una fecha usando
