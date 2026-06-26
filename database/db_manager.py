@@ -686,6 +686,63 @@ def obtener_resumen_ventas_mes(anio: int, mes: int) -> sqlite3.Row:
         ).fetchone()
 
 
+def obtener_detalles_ventas_dia_pagina(
+    fecha: str,
+    pagina: int = 1,
+    por_pagina: int = PAGINA_TAMANO_DEFAULT,
+) -> list:
+    """
+    Retorna una página de renglones de facturas pagadas de un día.
+    Usa JOIN con facturas (índice idx_facturas_fecha) para filtrar por fecha
+    sin cargar toda la tabla en memoria.
+    """
+    pagina = max(1, pagina)
+    offset = (pagina - 1) * por_pagina
+    with _conexion() as con:
+        return con.execute(
+            """SELECT fd.producto_id, fd.nombre_producto, fd.cantidad, fd.subtotal
+               FROM factura_detalles fd
+               INNER JOIN facturas f ON f.id = fd.factura_id
+               WHERE f.fecha = ? AND f.estado = 'pagada'
+               ORDER BY fd.id
+               LIMIT ? OFFSET ?""",
+            (fecha, por_pagina, offset),
+        ).fetchall()
+
+
+def obtener_cierres_mes_pagina(
+    anio: int,
+    mes: int,
+    pagina: int = 1,
+    por_pagina: int = PAGINA_TAMANO_DEFAULT,
+) -> list:
+    """
+    Retorna una página de cierres diarios de un mes/año, ordenados por fecha.
+    pagina es 1-indexado.
+    """
+    prefijo = f"{anio:04d}-{mes:02d}-%"
+    pagina = max(1, pagina)
+    offset = (pagina - 1) * por_pagina
+    with _conexion() as con:
+        return con.execute(
+            """SELECT * FROM cierres_diarios
+               WHERE fecha LIKE ?
+               ORDER BY fecha
+               LIMIT ? OFFSET ?""",
+            (prefijo, por_pagina, offset),
+        ).fetchall()
+
+
+def obtener_total_cierres_mes(anio: int, mes: int) -> int:
+    """Retorna el conteo de cierres diarios registrados en un mes/año."""
+    prefijo = f"{anio:04d}-{mes:02d}-%"
+    with _conexion() as con:
+        return con.execute(
+            "SELECT COUNT(*) FROM cierres_diarios WHERE fecha LIKE ?",
+            (prefijo,),
+        ).fetchone()[0]
+
+
 # ============================================================
 # CIERRES DIARIOS
 # ============================================================
