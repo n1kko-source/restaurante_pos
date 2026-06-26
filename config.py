@@ -45,4 +45,6 @@ IMPRESORA = {
 # EXPORTACIÓN DE REPORTES
 # ============================================================
 
+# Carpeta inicial sugerida en el diálogo "Guardar como" de reportes.
+# El usuario puede elegir otra ubicación en cada exportación.
 RUTA_EXPORTACION = Path(__file__).parent / "exports"
