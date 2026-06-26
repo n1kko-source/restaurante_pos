@@ -312,6 +312,29 @@ def actualizar_producto(
         )
 
 
+def obtener_productos_catalogo(termino: Optional[str] = None) -> list:
+    """
+    Retorna productos activos con JOIN a categorías para el POS.
+    termino: filtro opcional por nombre (LIKE case-insensitive).
+    Sin paginar: catálogo de menú acotado en operación normal.
+    """
+    condiciones = ["p.activo = 1"]
+    params = []
+    if termino:
+        condiciones.append("LOWER(p.nombre) LIKE LOWER(?)")
+        params.append(f"%{termino}%")
+    where = "WHERE " + " AND ".join(condiciones)
+    with _conexion() as con:
+        return con.execute(
+            f"""SELECT p.*, c.nombre AS nombre_categoria
+                FROM productos p
+                JOIN categorias c ON p.categoria_id = c.id
+                {where}
+                ORDER BY c.nombre, p.nombre""",
+            params,
+        ).fetchall()
+
+
 def desactivar_producto(id: int) -> None:
     """
     Marca un producto como inactivo (activo=0).
@@ -420,6 +443,25 @@ def obtener_items_pedido(pedido_id: int) -> list:
             "SELECT * FROM pedido_items WHERE pedido_id=? ORDER BY id",
             (pedido_id,),
         ).fetchall()
+
+
+def obtener_item_pedido_por_id(id: int) -> Optional[sqlite3.Row]:
+    """Retorna un ítem de pedido por su id, o None si no existe."""
+    with _conexion() as con:
+        return con.execute(
+            "SELECT * FROM pedido_items WHERE id=?", (id,)
+        ).fetchone()
+
+
+def obtener_item_pedido_por_producto(pedido_id: int, producto_id: int) -> Optional[sqlite3.Row]:
+    """Retorna el primer ítem del pedido con ese producto, o None."""
+    with _conexion() as con:
+        return con.execute(
+            """SELECT * FROM pedido_items
+               WHERE pedido_id=? AND producto_id=?
+               ORDER BY id LIMIT 1""",
+            (pedido_id, producto_id),
+        ).fetchone()
 
 
 def actualizar_cantidad_item(id: int, cantidad: int) -> None:
