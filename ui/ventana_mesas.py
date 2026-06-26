@@ -671,7 +671,7 @@ class VentanaMesas(ctk.CTkFrame):
         self.refrescar()
 
     def _accion_dividir_cuenta(self) -> None:
-        """Placeholder hasta implementar facturacion_service (división de cuenta)."""
+        """Abre el módulo de división de cuenta para el pedido activo."""
         mesa = self._requiere_mesa_seleccionada()
         if mesa is None:
             return
@@ -682,16 +682,33 @@ class VentanaMesas(ctk.CTkFrame):
                 f"La mesa {mesa.numero} no tiene un pedido activo.",
             )
             return
-        messagebox.showinfo(
-            "Dividir cuenta",
-            "El módulo de división de cuenta se implementará con "
-            "facturacion_service en el siguiente sprint.",
+        try:
+            items = mesa_service.obtener_items_pedido(pedido.id)
+        except ValueError as error:
+            self._manejar_error(error)
+            return
+        if not items:
+            messagebox.showwarning(
+                "Dividir cuenta",
+                "El pedido no tiene ítems. Agregue productos antes de dividir.",
+            )
+            return
+
+        from ui.ventana_dividir_cuenta import abrir_dividir_cuenta
+
+        abrir_dividir_cuenta(
+            self.winfo_toplevel(),
+            mesa_id=mesa.id,
+            mesa_numero=mesa.numero,
+            pedido_id=pedido.id,
+            items=items,
+            al_finalizar=self.refrescar,
         )
 
     def _accion_imprimir_factura(self) -> None:
         """
-        Envía la factura a impresora (stub) y libera la mesa.
-        Cierra el pedido activo y restablece el estado a libre.
+        Registra la factura, la envía a Colpos y libera la mesa.
+        Si la impresora no está disponible, guarda la factura y avisa al cajero.
         """
         mesa = self._requiere_mesa_seleccionada()
         if mesa is None:
@@ -704,11 +721,31 @@ class VentanaMesas(ctk.CTkFrame):
             )
             return
 
-        messagebox.showinfo(
-            "Impresión",
-            f"Factura del pedido #{pedido.id} enviada a impresora.\n"
-            "(Simulado — integración Colpos pendiente.)",
-        )
+        try:
+            from services import facturacion_service
+
+            factura, ok_impresion, mensaje = (
+                facturacion_service.facturar_e_imprimir_pedido(
+                    pedido.id,
+                    metodo_pago="efectivo",
+                    descuento=0,
+                )
+            )
+        except (ValueError, ErrorAcceso) as error:
+            self._manejar_error(error)
+            return
+
+        if ok_impresion:
+            messagebox.showinfo(
+                "Impresión",
+                f"{mensaje}\nFactura {factura.numero} registrada.",
+            )
+        else:
+            messagebox.showwarning(
+                "Impresión",
+                f"Factura {factura.numero} registrada en el sistema.\n\n"
+                f"No se pudo imprimir:\n{mensaje}",
+            )
 
         try:
             mesa_service.cerrar_pedido(pedido.id)

@@ -10,6 +10,19 @@ from typing import Optional
 
 
 @dataclass
+class FacturaDetalle:
+    """Representa un renglón de factura (tabla factura_detalles)."""
+
+    id: int
+    factura_id: int
+    producto_id: int
+    nombre_producto: str
+    cantidad: int
+    precio_unitario: int
+    subtotal: int
+
+
+@dataclass
 class Factura:
     """Representa la cabecera de una factura (tabla facturas)."""
 
