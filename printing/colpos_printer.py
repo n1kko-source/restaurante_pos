@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, Optional, Union
 
 from config import IMPRESORA
-from printing.plantilla_recibo import FacturaImpresion, generar_lineas_recibo
+from printing.plantilla_recibo import FacturaImpresion, formatear_recibo
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +114,8 @@ class ColposPrinter:
             )
 
         try:
-            lineas = generar_lineas_recibo(factura, self._ancho_papel)
-            for linea in lineas:
+            texto = formatear_recibo(factura, self._ancho_papel)
+            for linea in texto.splitlines():
                 self._impresora.textln(linea)
             self.cortar_papel()
         except ErrorImpresora:

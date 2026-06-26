@@ -8,6 +8,7 @@ import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 
+from config import RESTAURANTE
 import database.db_manager as db
 from models.factura import Factura, FacturaDetalle
 from models.pedido import PedidoItem
@@ -498,6 +499,8 @@ def obtener_datos_impresion(factura_id: int) -> Optional[FacturaImpresion]:
         factura=factura,
         detalles=detalles,
         mesa_numero=mesa.numero if mesa is not None else None,
+        nombre_restaurante=RESTAURANTE["nombre"],
+        direccion_restaurante=RESTAURANTE["direccion"],
     )
 
 
