@@ -9,8 +9,10 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 
 import database.db_manager as db
-from models.factura import Factura
+from models.factura import Factura, FacturaDetalle
 from models.pedido import PedidoItem
+from printing.colpos_printer import ColposPrinter, ErrorImpresora
+from printing.plantilla_recibo import FacturaImpresion
 from services import mesa_service
 from services.auth_service import requiere_rol
 
@@ -99,6 +101,19 @@ def _factura_desde_fila(fila) -> Factura:
         estado=fila["estado"],
         es_parcial=fila["es_parcial"],
         grupo_division=fila["grupo_division"],
+    )
+
+
+def _detalle_desde_fila(fila) -> FacturaDetalle:
+    """Convierte una fila sqlite3.Row de factura_detalles en FacturaDetalle."""
+    return FacturaDetalle(
+        id=fila["id"],
+        factura_id=fila["factura_id"],
+        producto_id=fila["producto_id"],
+        nombre_producto=fila["nombre_producto"],
+        cantidad=fila["cantidad"],
+        precio_unitario=fila["precio_unitario"],
+        subtotal=fila["subtotal"],
     )
 
 
@@ -418,3 +433,147 @@ def dividir_cuenta(
         )
 
     return facturas
+
+
+def preview_totales_division(
+    pedido_id: int,
+    num_personas: int,
+    asignaciones: Dict[int, Union[int, str]],
+) -> Dict[int, int]:
+    """
+    Calcula el total a pagar por cada persona sin registrar facturas.
+
+    Útil para la vista previa en la UI de dividir cuenta.
+    Retorna un mapa {persona: total} con personas 1-indexadas.
+    """
+    fila_pedido = db.obtener_pedido_por_id(pedido_id)
+    if fila_pedido is None:
+        raise ValueError(f"No existe un pedido con id {pedido_id}.")
+
+    items = mesa_service.obtener_items_pedido(pedido_id)
+    if not items:
+        raise ValueError(
+            f"El pedido {pedido_id} no tiene ítems. Agregue productos antes de dividir."
+        )
+
+    asignaciones_norm = _validar_asignaciones(items, num_personas, asignaciones)
+    detalles_por_persona = _construir_detalles_por_persona(
+        items, num_personas, asignaciones_norm
+    )
+    return {
+        persona: sum(detalle["subtotal"] for detalle in detalles)
+        for persona, detalles in detalles_por_persona.items()
+    }
+
+
+def obtener_factura(factura_id: int) -> Optional[Factura]:
+    """Retorna la cabecera de una factura por su id, o None si no existe."""
+    fila = db.obtener_factura_por_id(factura_id)
+    if fila is None:
+        return None
+    return _factura_desde_fila(fila)
+
+
+def obtener_detalles_factura(factura_id: int) -> List[FacturaDetalle]:
+    """Retorna los renglones de una factura ordenados por id."""
+    fila = db.obtener_factura_por_id(factura_id)
+    if fila is None:
+        raise ValueError(f"No existe una factura con id {factura_id}.")
+    filas = db.obtener_detalles_factura(factura_id)
+    return [_detalle_desde_fila(fila) for fila in filas]
+
+
+def obtener_datos_impresion(factura_id: int) -> Optional[FacturaImpresion]:
+    """
+    Arma el paquete completo de datos para imprimir una factura en Colpos.
+    Incluye número de mesa visible si la mesa aún existe en el salón.
+    """
+    factura = obtener_factura(factura_id)
+    if factura is None:
+        return None
+
+    detalles = obtener_detalles_factura(factura_id)
+    mesa = mesa_service.obtener_mesa(factura.mesa_id)
+    return FacturaImpresion(
+        factura=factura,
+        detalles=detalles,
+        mesa_numero=mesa.numero if mesa is not None else None,
+    )
+
+
+def _imprimir_datos_factura(datos: FacturaImpresion) -> Tuple[bool, str]:
+    """
+    Envía una factura a la impresora Colpos.
+    Retorna (éxito, mensaje) sin propagar excepciones de hardware.
+    """
+    impresora = ColposPrinter()
+    if not impresora.conectar():
+        return False, impresora.ultimo_error
+
+    try:
+        impresora.imprimir_factura(datos)
+        return True, f"Factura {datos.factura.numero} enviada a impresora."
+    except ErrorImpresora as error:
+        return False, str(error)
+    finally:
+        impresora.desconectar()
+
+
+@requiere_rol("cajero", "supervisor", "administrador")
+def imprimir_factura(factura_id: int) -> Tuple[bool, str]:
+    """
+    Imprime una factura ya registrada en la impresora térmica Colpos.
+
+    Retorna (True, mensaje_ok) o (False, mensaje_error) sin tumbar el POS
+    si la impresora no está disponible.
+    """
+    datos = obtener_datos_impresion(factura_id)
+    if datos is None:
+        return False, f"No existe una factura con id {factura_id}."
+    if not datos.detalles:
+        return False, "La factura no tiene renglones para imprimir."
+    return _imprimir_datos_factura(datos)
+
+
+@requiere_rol("cajero", "supervisor", "administrador")
+def facturar_e_imprimir_pedido(
+    pedido_id: int,
+    metodo_pago: str,
+    descuento: int = 0,
+) -> Tuple[Factura, bool, str]:
+    """
+    Registra la factura del pedido activo e intenta imprimirla en Colpos.
+
+    Retorna (factura, éxito_impresión, mensaje). La factura queda guardada
+    aunque falle la impresión física.
+    """
+    factura = crear_factura(pedido_id, metodo_pago, descuento)
+    datos = obtener_datos_impresion(factura.id)
+    if datos is None:
+        return factura, False, "No se pudieron cargar los datos de la factura."
+    ok, mensaje = _imprimir_datos_factura(datos)
+    return factura, ok, mensaje
+
+
+@requiere_rol("cajero", "supervisor", "administrador")
+def dividir_e_imprimir_cuenta(
+    pedido_id: int,
+    num_personas: int,
+    asignaciones: Dict[int, Union[int, str]],
+    metodo_pago: str = "efectivo",
+) -> Tuple[List[Factura], List[Tuple[int, bool, str]]]:
+    """
+    Divide el pedido en N facturas e intenta imprimir cada una.
+
+    Retorna (facturas, resultados_impresión) donde cada resultado es
+    (factura_id, éxito, mensaje).
+    """
+    facturas = dividir_cuenta(
+        pedido_id, num_personas, asignaciones, metodo_pago=metodo_pago
+    )
+    resultados: List[Tuple[int, bool, str]] = []
+    for factura in facturas:
+        ok, mensaje = imprimir_factura(factura.id)
+        resultados.append((factura.id, ok, mensaje))
+    return facturas, resultados
+

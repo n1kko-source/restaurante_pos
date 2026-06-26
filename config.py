@@ -26,7 +26,10 @@ IMPRESORA = {
     "tipo": "serial",       # "serial" | "usb"
     "puerto": "COM3",
     "baudrate": 9600,
-    "ancho_papel": 40,      # 32 para papel 58mm, 48 para 80mm
+    "ancho_papel": 40,      # 32 = papel 58 mm, 48 = papel 80 mm
+    # Solo si tipo="usb" (requiere vendor_id y product_id del dispositivo):
+    # "vendor_id": 0x04b8,
+    # "product_id": 0x0e15,
 }
 
 # ============================================================
