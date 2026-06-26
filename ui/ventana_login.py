@@ -1,6 +1,7 @@
 """Ventana de inicio de sesión con verificación de credenciales."""
 
 from datetime import datetime
+from tkinter import messagebox
 
 import customtkinter as ctk
 
@@ -210,4 +211,14 @@ class VentanaLogin(ctk.CTk):
 
         self.destroy()
         principal = VentanaPrincipal(usuario_auth)
+        mensaje_alerta = auth_service.consumir_alerta_inventario()
+        if mensaje_alerta:
+            principal.after(
+                150,
+                lambda: messagebox.showwarning(
+                    "Revisión de inventario",
+                    mensaje_alerta,
+                    parent=principal,
+                ),
+            )
         principal.mainloop()

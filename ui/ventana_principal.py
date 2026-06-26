@@ -169,6 +169,7 @@ class VentanaPrincipal(ctk.CTk):
         comandos = {
             "Mesas": self._abrir_mesas,
             "Menú": self._abrir_menu,
+            "Inventario": self._abrir_inventario,
         }
         return comandos.get(etiqueta)
 
@@ -240,6 +241,20 @@ class VentanaPrincipal(ctk.CTk):
 
         from services.auth_service import ErrorAcceso
         from ui.ventana_menu import mostrar_en
+
+        self._limpiar_modulo()
+        try:
+            self._modulo_actual = mostrar_en(self._contenedor_modulo)
+        except ErrorAcceso as error:
+            messagebox.showerror("Acceso denegado", str(error))
+            self._mostrar_bienvenida()
+
+    def _abrir_inventario(self) -> None:
+        """Abre el control de stock por producto."""
+        from tkinter import messagebox
+
+        from services.auth_service import ErrorAcceso
+        from ui.ventana_inventario import mostrar_en
 
         self._limpiar_modulo()
         try:
