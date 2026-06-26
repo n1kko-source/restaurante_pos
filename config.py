@@ -19,6 +19,15 @@ ADMIN_INICIAL_USUARIO = "admin"
 ADMIN_INICIAL_PASSWORD = "admin123"
 
 # ============================================================
+# DATOS DEL RESTAURANTE (encabezado de recibos y reportes)
+# ============================================================
+
+RESTAURANTE = {
+    "nombre": "Restaurante Hogareños",
+    "direccion": "Cra 15 # 23-45, Bogotá",
+}
+
+# ============================================================
 # IMPRESORA TÉRMICA COLPOS (ESC/POS)
 # ============================================================
 

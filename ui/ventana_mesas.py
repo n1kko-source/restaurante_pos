@@ -722,13 +722,37 @@ class VentanaMesas(ctk.CTkFrame):
             return
 
         try:
+            items = mesa_service.obtener_items_pedido(pedido.id)
+        except ValueError as error:
+            self._manejar_error(error)
+            return
+        if not items:
+            messagebox.showwarning(
+                "Imprimir factura",
+                "El pedido no tiene ítems. Agregue productos antes de facturar.",
+            )
+            return
+
+        total_pedido = sum(item.subtotal for item in items)
+        from ui.dialogo_cobro import solicitar_cobro
+
+        cobro = solicitar_cobro(
+            self.winfo_toplevel(),
+            total_pedido,
+            mesa.numero,
+        )
+        if cobro is None:
+            return
+        metodo_pago, descuento = cobro
+
+        try:
             from services import facturacion_service
 
             factura, ok_impresion, mensaje = (
                 facturacion_service.facturar_e_imprimir_pedido(
                     pedido.id,
-                    metodo_pago="efectivo",
-                    descuento=0,
+                    metodo_pago=metodo_pago,
+                    descuento=descuento,
                 )
             )
         except (ValueError, ErrorAcceso) as error:
