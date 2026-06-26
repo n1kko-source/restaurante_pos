@@ -170,6 +170,7 @@ class VentanaPrincipal(ctk.CTk):
             "Mesas": self._abrir_mesas,
             "Menú": self._abrir_menu,
             "Inventario": self._abrir_inventario,
+            "Reportes": self._abrir_reportes,
         }
         return comandos.get(etiqueta)
 
@@ -255,6 +256,20 @@ class VentanaPrincipal(ctk.CTk):
 
         from services.auth_service import ErrorAcceso
         from ui.ventana_inventario import mostrar_en
+
+        self._limpiar_modulo()
+        try:
+            self._modulo_actual = mostrar_en(self._contenedor_modulo)
+        except ErrorAcceso as error:
+            messagebox.showerror("Acceso denegado", str(error))
+            self._mostrar_bienvenida()
+
+    def _abrir_reportes(self) -> None:
+        """Abre la exportación de reportes diarios y mensuales."""
+        from tkinter import messagebox
+
+        from services.auth_service import ErrorAcceso
+        from ui.ventana_reportes import mostrar_en
 
         self._limpiar_modulo()
         try:
