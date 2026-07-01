@@ -7,6 +7,7 @@ from ui.tema import (
     PALETA,
     aplicar_tema_global,
     centrar_ventana,
+    crear_imagen_logo,
     fuente_normal,
     fuente_pequena,
     fuente_subtitulo,
@@ -16,7 +17,6 @@ from ui.tema import (
 # Opciones del menú lateral: (etiqueta, roles permitidos).
 _OPCIONES_MENU = [
     ("Mesas", ("cajero", "supervisor", "administrador")),
-    ("Punto de venta", ("cajero", "supervisor", "administrador")),
     ("Menú", ("supervisor", "administrador")),
     ("Inventario", ("supervisor", "administrador")),
     ("Reportes", ("supervisor", "administrador")),
@@ -24,8 +24,8 @@ _OPCIONES_MENU = [
     ("Configuración", ("administrador",)),
 ]
 
-_ANCHO_VENTANA = 1100
-_ALTO_VENTANA = 680
+_ANCHO_VENTANA = 1240
+_ALTO_VENTANA = 700
 
 
 class VentanaPrincipal(ctk.CTk):
@@ -43,7 +43,7 @@ class VentanaPrincipal(ctk.CTk):
         self._botones_menu = {}
 
         self.title(f"Sistema POS — {usuario.nombre}")
-        self.minsize(900, 560)
+        self.minsize(1020, 580)
         self.configure(fg_color=PALETA["fondo"])
         centrar_ventana(self, _ANCHO_VENTANA, _ALTO_VENTANA)
 
@@ -75,30 +75,51 @@ class VentanaPrincipal(ctk.CTk):
             corner_radius=0,
         ).grid(row=0, column=1, rowspan=22, sticky="ns")
 
+        sidebar.grid_columnconfigure(0, weight=1)
+
+        encabezado = ctk.CTkFrame(sidebar, fg_color="transparent")
+        encabezado.grid(row=0, column=0, sticky="ew", padx=14, pady=(20, 16))
+        encabezado.grid_columnconfigure(0, weight=1)
+
+        self._imagen_logo_sidebar = crear_imagen_logo(48, 48)
+        fila_encabezado = 0
+        if self._imagen_logo_sidebar is not None:
+            ctk.CTkLabel(
+                encabezado,
+                image=self._imagen_logo_sidebar,
+                text="",
+            ).grid(row=fila_encabezado, column=0, pady=(0, 6))
+            fila_encabezado += 1
+
         ctk.CTkLabel(
-            sidebar,
+            encabezado,
             text="Sistema POS",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color=PALETA["texto"],
-        ).grid(row=0, column=0, padx=20, pady=(24, 4), sticky="w")
+            anchor="center",
+            justify="center",
+        ).grid(row=fila_encabezado, column=0, pady=(0, 4))
 
         ctk.CTkLabel(
-            sidebar,
+            encabezado,
             text=self.usuario.nombre,
             font=fuente_pequena(),
             text_color=PALETA["texto_suave"],
             wraplength=180,
-            justify="left",
-        ).grid(row=1, column=0, padx=20, pady=(0, 2), sticky="w")
+            anchor="center",
+            justify="center",
+        ).grid(row=fila_encabezado + 1, column=0, pady=(0, 2))
 
         ctk.CTkLabel(
-            sidebar,
+            encabezado,
             text=f"Rol: {self.usuario.rol}",
             font=ctk.CTkFont(size=11),
             text_color=PALETA["texto_suave"],
-        ).grid(row=2, column=0, padx=20, pady=(0, 20), sticky="w")
+            anchor="center",
+            justify="center",
+        ).grid(row=fila_encabezado + 2, column=0, pady=(0, 4))
 
-        fila = 3
+        fila = 1
         for etiqueta, roles in _OPCIONES_MENU:
             if self.usuario.rol not in roles:
                 continue
@@ -159,7 +180,7 @@ class VentanaPrincipal(ctk.CTk):
             corner_radius=0,
             fg_color=PALETA["fondo"],
         )
-        self._contenedor_modulo.grid(row=0, column=1, sticky="nsew", padx=16, pady=16)
+        self._contenedor_modulo.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self._contenedor_modulo.grid_columnconfigure(0, weight=1)
         self._contenedor_modulo.grid_rowconfigure(0, weight=1)
         self._mostrar_bienvenida()
@@ -171,6 +192,8 @@ class VentanaPrincipal(ctk.CTk):
             "Menú": self._abrir_menu,
             "Inventario": self._abrir_inventario,
             "Reportes": self._abrir_reportes,
+            "Usuarios": self._abrir_usuarios,
+            "Configuración": self._abrir_configuracion,
         }
         return comandos.get(etiqueta)
 
@@ -278,12 +301,42 @@ class VentanaPrincipal(ctk.CTk):
             messagebox.showerror("Acceso denegado", str(error))
             self._mostrar_bienvenida()
 
+    def _abrir_usuarios(self) -> None:
+        """Abre la administración de usuarios del sistema."""
+        from tkinter import messagebox
+
+        from services.auth_service import ErrorAcceso
+        from ui.ventana_usuarios import mostrar_en
+
+        self._limpiar_modulo()
+        try:
+            self._modulo_actual = mostrar_en(self._contenedor_modulo)
+        except ErrorAcceso as error:
+            messagebox.showerror("Acceso denegado", str(error))
+            self._mostrar_bienvenida()
+
+    def _abrir_configuracion(self) -> None:
+        """Abre la configuración de fecha y hora del sistema."""
+        from tkinter import messagebox
+
+        from services.auth_service import ErrorAcceso
+        from ui.ventana_configuracion import mostrar_en
+
+        self._limpiar_modulo()
+        try:
+            self._modulo_actual = mostrar_en(self._contenedor_modulo)
+        except ErrorAcceso as error:
+            messagebox.showerror("Acceso denegado", str(error))
+            self._mostrar_bienvenida()
+
     def _cerrar_sesion(self) -> None:
         """Cierra la sesión y regresa a la pantalla de login."""
         from services import auth_service
+        from ui.tema import limpiar_cache_ui_sesion
         from ui.ventana_login import VentanaLogin
 
         auth_service.cerrar_sesion()
+        limpiar_cache_ui_sesion()
         self.destroy()
         login = VentanaLogin()
         login.mainloop()

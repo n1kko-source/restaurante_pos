@@ -20,6 +20,7 @@ from printing.plantilla_recibo import (
     generar_lineas_recibo,
     normalizar_ancho_papel,
 )
+from services import plantilla_factura_service
 
 
 def _factura_ejemplo(descuento: int = 0, es_parcial: int = 0) -> Factura:
@@ -33,7 +34,7 @@ def _factura_ejemplo(descuento: int = 0, es_parcial: int = 0) -> Factura:
         hora="14:30:45",
         total=44000,
         descuento=descuento,
-        metodo_pago="billetera_digital",
+        metodo_pago="nequi",
         estado="pagada",
         es_parcial=es_parcial,
         grupo_division="split-1-1" if es_parcial else None,
@@ -84,6 +85,32 @@ class TestFormatearRecibo(unittest.TestCase):
         self.assertIn("2026-06-25", lineas[2])
         self.assertIn("14:30", lineas[2])
 
+    def test_campos_plantilla_vacios_no_generan_lineas_extra(self):
+        datos = _datos_ejemplo()
+        datos.titulo_documento = ""
+        datos.nit = ""
+        datos.regimen_tributario = ""
+        lineas = generar_lineas_recibo(datos, 48)
+        textos = "\n".join(lineas)
+        self.assertNotIn("NIT:", textos)
+        self.assertNotIn("Comprador:", textos)
+
+    def test_campos_plantilla_configurados_aparecen_en_recibo(self):
+        datos = _datos_ejemplo()
+        datos.titulo_documento = "Factura Electrónica de Venta"
+        datos.razon_social = "Hogareños SAS"
+        datos.nit = "900123456-7"
+        datos.regimen_tributario = "Responsable de IVA"
+        datos.comprador_nombre = "Consumidor final"
+        datos.comprador_identificacion = "222222222222"
+        texto = formatear_recibo(datos, 48)
+        self.assertIn("FACTURA ELECTRÓNICA DE VENTA", texto.upper())
+        self.assertIn("HOGAREÑOS SAS", texto.upper())
+        self.assertIn("NIT: 900123456-7", texto)
+        self.assertIn("Responsable de IVA", texto)
+        self.assertIn("Comprador: Consumidor final", texto)
+        self.assertIn("Identificación: 222222222222", texto)
+
     def test_separadores_son_guiones_del_ancho_correcto(self):
         ancho = normalizar_ancho_papel(32)
         lineas = generar_lineas_recibo(self.datos, 32)
@@ -106,7 +133,7 @@ class TestFormatearRecibo(unittest.TestCase):
         texto = formatear_recibo(self.datos, 48)
         self.assertIn("TOTAL:", texto)
         self.assertIn("$44.000", texto)
-        self.assertIn("Billetera digital", texto)
+        self.assertIn("Nequi", texto)
 
     def test_pie_agradecimiento(self):
         texto = formatear_recibo(self.datos, 32)
@@ -136,6 +163,22 @@ class TestFormatearRecibo(unittest.TestCase):
                         ancho,
                         f"Línea excede {ancho} chars: {linea!r}",
                     )
+
+
+class TestVistaPreviaPlantilla(unittest.TestCase):
+    """Vista previa de demostración para la UI de configuración."""
+
+    def test_generar_vista_previa_incluye_items_demo(self):
+        vista = plantilla_factura_service.generar_vista_previa(
+            titulo_documento="Factura Electrónica de Venta",
+            razon_social="Hogareños SAS",
+            nit="900123456-7",
+        )
+        texto = "\n".join(vista["lineas"])
+        self.assertIn("Jugo natural", texto)
+        self.assertIn("FAC-20260629-001", texto)
+        self.assertIn("Mesa: 6", texto)
+        self.assertGreater(vista["ancho_caracteres"], 0)
 
 
 if __name__ == "__main__":

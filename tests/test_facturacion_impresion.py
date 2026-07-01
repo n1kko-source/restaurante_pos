@@ -132,13 +132,13 @@ class TestFacturarEImprimirPedido(_BdImpresionBase):
 
         factura, ok, mensaje = facturacion_service.facturar_e_imprimir_pedido(
             self._pedido_id,
-            metodo_pago="billetera_digital",
+            metodo_pago="daviplata",
             descuento=2000,
         )
 
         self.assertFalse(ok)
         self.assertIsNotNone(factura.id)
-        self.assertEqual(factura.metodo_pago, "billetera_digital")
+        self.assertEqual(factura.metodo_pago, "daviplata")
         self.assertEqual(factura.descuento, 2000)
         self.assertEqual(factura.total_neto(), 34000)
 

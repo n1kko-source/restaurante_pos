@@ -110,11 +110,13 @@ CREATE TABLE facturas (
     total INTEGER NOT NULL CHECK(total >= 0),
     descuento INTEGER NOT NULL DEFAULT 0 CHECK(descuento >= 0),
     metodo_pago TEXT NOT NULL DEFAULT 'efectivo'
-        CHECK(metodo_pago IN ('efectivo', 'billetera_digital')),
+        CHECK(metodo_pago IN ('efectivo', 'daviplata', 'nequi', 'anotar')),
     estado TEXT NOT NULL DEFAULT 'pagada'
         CHECK(estado IN ('pagada', 'anulada')),
     es_parcial INTEGER NOT NULL DEFAULT 0 CHECK(es_parcial IN (0, 1)),
     grupo_division TEXT,   -- formato: split-{pedido_id}-{timestamp_unix}
+    comprador_nombre TEXT NOT NULL DEFAULT '',
+    comprador_identificacion TEXT NOT NULL DEFAULT '',
     CHECK((es_parcial = 0 AND grupo_division IS NULL) OR (es_parcial = 1 AND grupo_division IS NOT NULL))
 );
 
@@ -155,6 +157,18 @@ CREATE TABLE alertas (
 );
 
 -- ============================================================
+-- COLA DE IMPRESIÓN (facturas no impresas por fallo de hardware)
+-- ============================================================
+CREATE TABLE cola_impresion (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    factura_id INTEGER NOT NULL UNIQUE REFERENCES facturas(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    error_ultimo TEXT,
+    intentos INTEGER NOT NULL DEFAULT 1 CHECK(intentos >= 1),
+    registrado_en TEXT NOT NULL
+);
+
+-- ============================================================
 -- ÍNDICES
 -- ============================================================
 CREATE INDEX idx_facturas_fecha ON facturas(fecha);
@@ -163,6 +177,7 @@ CREATE INDEX idx_pedido_items_producto ON pedido_items(producto_id);
 CREATE INDEX idx_factura_detalles_producto ON factura_detalles(producto_id);
 CREATE INDEX idx_alertas_tipo_fecha ON alertas(tipo, fecha);
 CREATE INDEX idx_facturas_grupo_division ON facturas(grupo_division);
+CREATE INDEX idx_cola_impresion_factura ON cola_impresion(factura_id);
 
 -- ============================================================
 -- DATOS SEMILLA

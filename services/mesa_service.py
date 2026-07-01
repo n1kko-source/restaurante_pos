@@ -4,7 +4,6 @@ Flujo de capas: ui/ -> services/mesa_service.py -> database/db_manager.py
 Este módulo nunca importa CustomTkinter ni nada de ui/.
 """
 
-from datetime import datetime
 from typing import Dict, List, Optional, Set
 
 import database.db_manager as db
@@ -16,6 +15,7 @@ from models.mesa import (
 )
 from models.pedido import Pedido, PedidoItem
 from services.auth_service import requiere_rol
+from services import hora_service
 
 # Transiciones válidas entre estados de mesa según el flujo operativo del salón.
 _TRANSICIONES_PERMITIDAS: Dict[str, Set[str]] = {
@@ -32,22 +32,8 @@ _ESTADOS_MESA_VALIDOS = frozenset(_TRANSICIONES_PERMITIDAS.keys())
 # ============================================================
 
 def _obtener_fecha_hora_actual() -> tuple:
-    """
-    Retorna (fecha, hora) del reloj local en formatos del schema.
-    Valida rangos semánticos antes de insertar en pedidos.
-    """
-    ahora = datetime.now()
-    fecha = ahora.strftime("%Y-%m-%d")
-    hora = ahora.strftime("%H:%M:%S")
-    partes = hora.split(":")
-    if len(partes) != 3:
-        raise ValueError("La hora del sistema no tiene un formato válido.")
-    horas, minutos, segundos = (int(p) for p in partes)
-    if not (0 <= horas <= 23 and 0 <= minutos <= 59 and 0 <= segundos <= 59):
-        raise ValueError(
-            "La hora del sistema no es válida. Revise la configuración del equipo."
-        )
-    return fecha, hora
+    """Delega en hora_service la obtención validada de fecha y hora."""
+    return hora_service.obtener_fecha_hora_actual()
 
 
 def _mesa_desde_fila(fila) -> Mesa:

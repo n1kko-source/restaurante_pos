@@ -10,11 +10,16 @@ from services.auth_service import ErrorAcceso, requiere_rol
 from services.pedido_service import ProductoCatalogo
 from ui.tema import (
     PALETA,
+    PADDING_PANEL_H,
+    PADDING_PANEL_INFERIOR,
     centrar_ventana,
     fuente_boton,
     fuente_normal,
+    fuente_pequena,
     fuente_subtitulo,
     fuente_titulo,
+    kwargs_boton_primario,
+    kwargs_boton_secundario,
 )
 
 
@@ -55,68 +60,129 @@ class _DialogoCantidad(ctk.CTkToplevel):
     def __init__(self, parent, titulo: str, valor_inicial: int = 1):
         super().__init__(parent)
         self.title(titulo)
-        self.configure(fg_color=PALETA["tarjeta"])
+        self.configure(fg_color=PALETA["fondo"])
         self.transient(parent)
         self.grab_set()
         self.resizable(False, False)
-        centrar_ventana(self, 320, 180)
 
         self._resultado: Optional[int] = None
+        self._valor_min = 1
 
-        marco = ctk.CTkFrame(self, fg_color="transparent")
-        marco.pack(expand=True, fill="both", padx=24, pady=24)
+        marco = ctk.CTkFrame(
+            self,
+            fg_color=PALETA["tarjeta"],
+            corner_radius=12,
+            border_width=1,
+            border_color=PALETA["borde"],
+        )
+        marco.pack(padx=20, pady=20, fill="both", expand=True)
+        marco.grid_columnconfigure(0, weight=1)
+
+        if " — " in titulo:
+            etiqueta_producto = titulo.split(" — ", 1)[1]
+        else:
+            etiqueta_producto = titulo
 
         ctk.CTkLabel(
             marco,
-            text=titulo,
+            text="Cantidad",
+            font=fuente_pequena(),
+            text_color=PALETA["texto_suave"],
+        ).grid(row=0, column=0, padx=20, pady=(18, 4), sticky="w")
+
+        ctk.CTkLabel(
+            marco,
+            text=etiqueta_producto,
             font=fuente_subtitulo(),
             text_color=PALETA["texto"],
-        ).pack(pady=(0, 12))
+        ).grid(row=1, column=0, padx=20, pady=(0, 16), sticky="w")
+
+        fila_cantidad = ctk.CTkFrame(marco, fg_color="transparent")
+        fila_cantidad.grid(row=2, column=0, padx=20, pady=(0, 20), sticky="ew")
+        fila_cantidad.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkButton(
+            fila_cantidad,
+            text="−",
+            width=48,
+            height=42,
+            font=fuente_boton(),
+            command=self._restar,
+            **kwargs_boton_secundario(),
+        ).grid(row=0, column=0, padx=(0, 8))
 
         self._entrada = ctk.CTkEntry(
-            marco,
-            height=40,
+            fila_cantidad,
+            height=42,
             font=fuente_normal(),
             fg_color=PALETA["entrada_fondo"],
             border_color=PALETA["entrada_borde"],
+            text_color=PALETA["texto"],
             justify="center",
         )
-        self._entrada.pack(fill="x", pady=(0, 16))
-        self._entrada.insert(0, str(valor_inicial))
+        self._entrada.grid(row=0, column=1, sticky="ew")
+        self._entrada.insert(0, str(max(valor_inicial, self._valor_min)))
         self._entrada.select_range(0, "end")
         self._entrada.focus_set()
         self._entrada.bind("<Return>", lambda _e: self._confirmar())
 
+        ctk.CTkButton(
+            fila_cantidad,
+            text="+",
+            width=48,
+            height=42,
+            font=fuente_boton(),
+            command=self._sumar,
+            **kwargs_boton_secundario(),
+        ).grid(row=0, column=2, padx=(8, 0))
+
         fila_botones = ctk.CTkFrame(marco, fg_color="transparent")
-        fila_botones.pack(fill="x")
+        fila_botones.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 20))
         fila_botones.grid_columnconfigure((0, 1), weight=1)
 
         ctk.CTkButton(
             fila_botones,
             text="Cancelar",
-            height=38,
+            height=42,
             font=fuente_normal(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._cancelar,
-        ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+            **kwargs_boton_secundario(),
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
         ctk.CTkButton(
             fila_botones,
             text="Aceptar",
-            height=38,
+            height=42,
             font=fuente_boton(),
-            fg_color=PALETA["boton_primario"],
-            hover_color=PALETA["boton_primario_hover"],
-            text_color="#ffffff",
             command=self._confirmar,
-        ).grid(row=0, column=1, sticky="ew", padx=(6, 0))
+            **kwargs_boton_primario(),
+        ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
 
         self.protocol("WM_DELETE_WINDOW", self._cancelar)
+        self.bind("<Escape>", lambda _e: self._cancelar())
+        centrar_ventana(self, 400, 300, parent=parent)
         self.wait_window()
+
+    def _leer_cantidad(self) -> int:
+        """Lee la cantidad del campo o retorna el mínimo si no es válida."""
+        texto = self._entrada.get().strip()
+        if texto.isdigit():
+            return max(self._valor_min, int(texto))
+        return self._valor_min
+
+    def _establecer_cantidad(self, valor: int) -> None:
+        """Actualiza el campo con una cantidad entera válida."""
+        valor = max(self._valor_min, valor)
+        self._entrada.delete(0, "end")
+        self._entrada.insert(0, str(valor))
+
+    def _sumar(self) -> None:
+        """Incrementa la cantidad en una unidad."""
+        self._establecer_cantidad(self._leer_cantidad() + 1)
+
+    def _restar(self) -> None:
+        """Decrementa la cantidad sin bajar del mínimo."""
+        self._establecer_cantidad(self._leer_cantidad() - 1)
 
     def _confirmar(self) -> None:
         """Valida la entrada y cierra con el valor ingresado."""
@@ -172,7 +238,6 @@ class VentanaPOS:
         self._ventana.configure(fg_color=PALETA["fondo"])
         self._ventana.transient(parent)
         self._ventana.grab_set()
-        centrar_ventana(self._ventana, 1040, 640)
 
         self._ventana.grid_columnconfigure(0, weight=1)
         self._ventana.grid_rowconfigure(1, weight=1)
@@ -180,6 +245,8 @@ class VentanaPOS:
         self._construir_encabezado()
         self._construir_cuerpo()
         self._construir_pie()
+
+        centrar_ventana(self._ventana, 1040, 640, parent=parent)
 
         self._ventana.protocol("WM_DELETE_WINDOW", self._cerrar)
         self._cargar_catalogo()
@@ -292,13 +359,16 @@ class VentanaPOS:
             panel,
             text="+  Agregar ítem",
             height=44,
-            corner_radius=10,
             font=fuente_boton(),
-            fg_color=PALETA["boton_primario"],
-            hover_color=PALETA["boton_primario_hover"],
-            text_color="#ffffff",
             command=self._accion_agregar,
-        ).grid(row=3, column=0, padx=16, pady=(0, 16), sticky="ew")
+            **kwargs_boton_primario(),
+        ).grid(
+            row=3,
+            column=0,
+            padx=PADDING_PANEL_H,
+            pady=(0, PADDING_PANEL_INFERIOR),
+            sticky="ew",
+        )
 
     def _construir_panel_pedido(self, parent) -> None:
         """Lista del pedido activo con subtotales y acciones."""
@@ -376,34 +446,32 @@ class VentanaPOS:
         self._label_total.grid(row=1, column=1, sticky="e")
 
         marco_botones = ctk.CTkFrame(panel, fg_color="transparent")
-        marco_botones.grid(row=4, column=0, padx=16, pady=(0, 16), sticky="ew")
+        marco_botones.grid(
+            row=4, column=0, padx=PADDING_PANEL_H, pady=(0, PADDING_PANEL_INFERIOR), sticky="ew"
+        )
         marco_botones.grid_columnconfigure(0, weight=1)
 
         ctk.CTkButton(
             marco_botones,
             text="Cambiar cantidad",
             height=40,
-            corner_radius=10,
             font=fuente_normal(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._accion_cambiar_cantidad,
+            **kwargs_boton_secundario(),
         ).grid(row=0, column=0, sticky="ew", pady=(0, 6))
 
         ctk.CTkButton(
             marco_botones,
             text="Eliminar ítem",
             height=40,
-            corner_radius=10,
             font=fuente_normal(),
             fg_color=PALETA["boton_accion"],
             hover_color="#fce8e6",
             text_color=PALETA["error"],
+            text_color_disabled=PALETA["texto_boton_desactivado"],
             border_width=1,
             border_color=PALETA["borde"],
+            corner_radius=10,
             command=self._accion_eliminar,
         ).grid(row=1, column=0, sticky="ew")
 
@@ -413,15 +481,10 @@ class VentanaPOS:
             self._ventana,
             text="Cerrar y volver al mapa",
             height=44,
-            corner_radius=10,
             font=fuente_boton(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._cerrar,
-        ).grid(row=2, column=0, padx=16, pady=(8, 16), sticky="ew")
+            **kwargs_boton_secundario(),
+        ).grid(row=2, column=0, padx=PADDING_PANEL_H, pady=(8, PADDING_PANEL_INFERIOR), sticky="ew")
 
     def _al_escribir_busqueda(self, _evento=None) -> None:
         """Filtra el catálogo con un pequeño retardo para no saturar la UI."""

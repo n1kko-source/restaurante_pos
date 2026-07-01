@@ -25,7 +25,7 @@ RUTA_SCHEMA = Path(__file__).parent / "schema.sql"
 _TABLAS_CONTRATO = {
     "usuarios", "categorias", "productos", "mesas", "pedidos",
     "pedido_items", "contador_facturas", "facturas", "factura_detalles",
-    "cierres_diarios", "alertas",
+    "cierres_diarios", "alertas", "cola_impresion",
 }
 
 
@@ -83,9 +83,15 @@ def init_db() -> None:
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         }
-        if not _TABLAS_CONTRATO.issubset(tablas_existentes):
+        faltantes = _TABLAS_CONTRATO - tablas_existentes
+        if not tablas_existentes:
             schema = RUTA_SCHEMA.read_text(encoding="utf-8")
             con.executescript(schema)
+        elif faltantes:
+            _aplicar_migraciones(con, faltantes)
+
+        _migrar_columnas_facturas(con)
+        _migrar_metodos_pago_facturas(con)
 
         if con.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0] == 0:
             password_hash = bcrypt.hashpw(
@@ -99,6 +105,119 @@ def init_db() -> None:
             con.commit()
     finally:
         con.close()
+
+
+def _aplicar_migraciones(
+    con: sqlite3.Connection, tablas_faltantes: Optional[set] = None
+) -> None:
+    """Crea tablas nuevas en BD existentes sin re-ejecutar el schema completo."""
+    if tablas_faltantes is None:
+        tablas_faltantes = {"cola_impresion"}
+    if "cola_impresion" in tablas_faltantes:
+        con.execute(
+            """CREATE TABLE IF NOT EXISTS cola_impresion (
+                   id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   factura_id INTEGER NOT NULL UNIQUE REFERENCES facturas(id)
+                       ON DELETE CASCADE ON UPDATE CASCADE,
+                   error_ultimo TEXT,
+                   intentos INTEGER NOT NULL DEFAULT 1 CHECK(intentos >= 1),
+                   registrado_en TEXT NOT NULL
+               )"""
+        )
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cola_impresion_factura "
+            "ON cola_impresion(factura_id)"
+        )
+    con.commit()
+
+
+def _migrar_columnas_facturas(con: sqlite3.Connection) -> None:
+    """Añade columnas de comprador a facturas en bases de datos existentes."""
+    columnas = {
+        fila[1]
+        for fila in con.execute("PRAGMA table_info(facturas)").fetchall()
+    }
+    if not columnas:
+        return
+    if "comprador_nombre" not in columnas:
+        con.execute(
+            "ALTER TABLE facturas ADD COLUMN comprador_nombre TEXT NOT NULL DEFAULT ''"
+        )
+    if "comprador_identificacion" not in columnas:
+        con.execute(
+            "ALTER TABLE facturas ADD COLUMN comprador_identificacion TEXT NOT NULL DEFAULT ''"
+        )
+    con.commit()
+
+
+def _migrar_metodos_pago_facturas(con: sqlite3.Connection) -> None:
+    """Amplía el CHECK de metodo_pago en facturas existentes."""
+    fila = con.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='facturas'"
+    ).fetchone()
+    if not fila or not fila[0]:
+        return
+    if "daviplata" in fila[0]:
+        return
+
+    con.executescript(
+        """
+        PRAGMA foreign_keys=OFF;
+        BEGIN TRANSACTION;
+
+        CREATE TABLE facturas_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero TEXT UNIQUE NOT NULL
+                CHECK(length(numero) = 16 AND numero LIKE 'FAC-____________'),
+            pedido_id INTEGER NOT NULL REFERENCES pedidos(id)
+                ON DELETE RESTRICT ON UPDATE CASCADE,
+            mesa_id INTEGER NOT NULL REFERENCES mesas(id)
+                ON DELETE RESTRICT ON UPDATE CASCADE,
+            fecha TEXT NOT NULL CHECK(fecha LIKE '____-__-__'),
+            hora TEXT NOT NULL CHECK(hora LIKE '__:__:__'),
+            total INTEGER NOT NULL CHECK(total >= 0),
+            descuento INTEGER NOT NULL DEFAULT 0 CHECK(descuento >= 0),
+            metodo_pago TEXT NOT NULL DEFAULT 'efectivo'
+                CHECK(metodo_pago IN ('efectivo', 'daviplata', 'nequi', 'anotar')),
+            estado TEXT NOT NULL DEFAULT 'pagada'
+                CHECK(estado IN ('pagada', 'anulada')),
+            es_parcial INTEGER NOT NULL DEFAULT 0 CHECK(es_parcial IN (0, 1)),
+            grupo_division TEXT,
+            comprador_nombre TEXT NOT NULL DEFAULT '',
+            comprador_identificacion TEXT NOT NULL DEFAULT '',
+            CHECK(
+                (es_parcial = 0 AND grupo_division IS NULL)
+                OR (es_parcial = 1 AND grupo_division IS NOT NULL)
+            )
+        );
+
+        INSERT INTO facturas_new (
+            id, numero, pedido_id, mesa_id, fecha, hora, total, descuento,
+            metodo_pago, estado, es_parcial, grupo_division,
+            comprador_nombre, comprador_identificacion
+        )
+        SELECT
+            id, numero, pedido_id, mesa_id, fecha, hora, total, descuento,
+            CASE metodo_pago
+                WHEN 'billetera_digital' THEN 'daviplata'
+                ELSE metodo_pago
+            END,
+            estado, es_parcial, grupo_division,
+            comprador_nombre, comprador_identificacion
+        FROM facturas;
+
+        DROP TABLE facturas;
+        ALTER TABLE facturas_new RENAME TO facturas;
+
+        CREATE INDEX IF NOT EXISTS idx_facturas_fecha ON facturas(fecha);
+        CREATE INDEX IF NOT EXISTS idx_facturas_grupo_division
+            ON facturas(grupo_division);
+
+        COMMIT;
+        PRAGMA foreign_keys=ON;
+        """
+    )
+    con.commit()
 
 
 # ============================================================
@@ -124,21 +243,32 @@ def obtener_usuario_por_nombre(usuario: str) -> Optional[sqlite3.Row]:
 
 
 def obtener_usuarios_pagina(
-    pagina: int = 1, por_pagina: int = PAGINA_TAMANO_DEFAULT
+    pagina: int = 1,
+    por_pagina: int = PAGINA_TAMANO_DEFAULT,
+    rol: Optional[str] = None,
 ) -> list:
     """Retorna una página de usuarios ordenados por nombre. pagina es 1-indexado."""
     pagina = max(1, pagina)
     offset = (pagina - 1) * por_pagina
     with _conexion() as con:
+        if rol is not None:
+            return con.execute(
+                "SELECT * FROM usuarios WHERE rol = ? ORDER BY nombre LIMIT ? OFFSET ?",
+                (rol, por_pagina, offset),
+            ).fetchall()
         return con.execute(
             "SELECT * FROM usuarios ORDER BY nombre LIMIT ? OFFSET ?",
             (por_pagina, offset),
         ).fetchall()
 
 
-def obtener_total_usuarios() -> int:
+def obtener_total_usuarios(rol: Optional[str] = None) -> int:
     """Retorna el conteo total de usuarios para calcular el número de páginas."""
     with _conexion() as con:
+        if rol is not None:
+            return con.execute(
+                "SELECT COUNT(*) FROM usuarios WHERE rol = ?", (rol,)
+            ).fetchone()[0]
         return con.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0]
 
 
@@ -532,6 +662,8 @@ def registrar_factura_completa(
     detalles: list,
     es_parcial: int = 0,
     grupo_division: Optional[str] = None,
+    comprador_nombre: str = "",
+    comprador_identificacion: str = "",
 ) -> tuple:
     """
     Registra una factura completa en una sola transacción atómica:
@@ -549,10 +681,12 @@ def registrar_factura_completa(
         cursor = con.execute(
             """INSERT INTO facturas
                (numero, pedido_id, mesa_id, fecha, hora, total, descuento,
-                metodo_pago, es_parcial, grupo_division)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                metodo_pago, es_parcial, grupo_division,
+                comprador_nombre, comprador_identificacion)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (numero, pedido_id, mesa_id, fecha, hora, total, descuento,
-             metodo_pago, es_parcial, grupo_division),
+             metodo_pago, es_parcial, grupo_division,
+             comprador_nombre.strip(), comprador_identificacion.strip()),
         )
         factura_id = cursor.lastrowid
         for detalle in detalles:
@@ -693,20 +827,38 @@ def obtener_detalles_ventas_dia_pagina(
 ) -> list:
     """
     Retorna una página de renglones de facturas pagadas de un día.
-    Usa JOIN con facturas (índice idx_facturas_fecha) para filtrar por fecha
-    sin cargar toda la tabla en memoria.
+    Incluye número de factura, método de pago y comprador; ordenado por factura.
     """
     pagina = max(1, pagina)
     offset = (pagina - 1) * por_pagina
     with _conexion() as con:
         return con.execute(
-            """SELECT fd.producto_id, fd.nombre_producto, fd.cantidad, fd.subtotal
+            """SELECT f.numero AS factura_numero,
+                      f.metodo_pago,
+                      f.comprador_nombre,
+                      fd.producto_id,
+                      fd.nombre_producto,
+                      fd.cantidad,
+                      fd.subtotal
                FROM factura_detalles fd
                INNER JOIN facturas f ON f.id = fd.factura_id
                WHERE f.fecha = ? AND f.estado = 'pagada'
-               ORDER BY fd.id
+               ORDER BY f.numero, fd.id
                LIMIT ? OFFSET ?""",
             (fecha, por_pagina, offset),
+        ).fetchall()
+
+
+def obtener_totales_ventas_dia_por_metodo_pago(fecha: str) -> list:
+    """Retorna total neto por método de pago para facturas pagadas de un día."""
+    with _conexion() as con:
+        return con.execute(
+            """SELECT metodo_pago,
+                      COALESCE(SUM(total - descuento), 0) AS total
+               FROM facturas
+               WHERE fecha = ? AND estado = 'pagada'
+               GROUP BY metodo_pago""",
+            (fecha,),
         ).fetchall()
 
 
@@ -774,6 +926,76 @@ def obtener_cierre_por_fecha(fecha: str) -> Optional[sqlite3.Row]:
         return con.execute(
             "SELECT * FROM cierres_diarios WHERE fecha=?", (fecha,)
         ).fetchone()
+
+
+# ============================================================
+# COLA DE IMPRESIÓN
+# ============================================================
+
+def registrar_cola_impresion(
+    factura_id: int, error_ultimo: str, registrado_en: str
+) -> None:
+    """
+    Registra o actualiza una factura pendiente de impresión.
+    Incrementa intentos si ya estaba en cola.
+    """
+    with _conexion(escritura=True) as con:
+        existente = con.execute(
+            "SELECT id, intentos FROM cola_impresion WHERE factura_id=?",
+            (factura_id,),
+        ).fetchone()
+        if existente is not None:
+            con.execute(
+                """UPDATE cola_impresion
+                   SET error_ultimo=?, intentos=?, registrado_en=?
+                   WHERE factura_id=?""",
+                (
+                    error_ultimo,
+                    int(existente["intentos"]) + 1,
+                    registrado_en,
+                    factura_id,
+                ),
+            )
+        else:
+            con.execute(
+                """INSERT INTO cola_impresion
+                   (factura_id, error_ultimo, intentos, registrado_en)
+                   VALUES (?, ?, 1, ?)""",
+                (factura_id, error_ultimo, registrado_en),
+            )
+
+
+def quitar_de_cola_impresion(factura_id: int) -> None:
+    """Elimina una factura de la cola tras imprimirla correctamente."""
+    with _conexion(escritura=True) as con:
+        con.execute("DELETE FROM cola_impresion WHERE factura_id=?", (factura_id,))
+
+
+def obtener_total_cola_impresion() -> int:
+    """Retorna cuántas facturas están pendientes de impresión."""
+    with _conexion() as con:
+        return con.execute("SELECT COUNT(*) FROM cola_impresion").fetchone()[0]
+
+
+def obtener_cola_impresion_pagina(
+    pagina: int = 1, por_pagina: int = PAGINA_TAMANO_DEFAULT
+) -> list:
+    """
+    Retorna una página de la cola con datos de la factura asociada.
+    Orden: más antiguas primero (registrado_en ASC).
+    """
+    pagina = max(1, pagina)
+    offset = (pagina - 1) * por_pagina
+    with _conexion() as con:
+        return con.execute(
+            """SELECT c.id AS cola_id, c.factura_id, c.error_ultimo, c.intentos,
+                      c.registrado_en, f.numero, f.fecha, f.hora, f.total, f.descuento
+               FROM cola_impresion c
+               INNER JOIN facturas f ON f.id = c.factura_id
+               ORDER BY c.registrado_en ASC
+               LIMIT ? OFFSET ?""",
+            (por_pagina, offset),
+        ).fetchall()
 
 
 # ============================================================

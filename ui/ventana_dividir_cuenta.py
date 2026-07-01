@@ -5,19 +5,26 @@ from typing import Callable, Dict, List, Optional, Union
 
 import customtkinter as ctk
 
+from config import ETIQUETA_A_METODO_PAGO, METODOS_PAGO
 from models.mesa import ESTADO_LIBRE
 from models.pedido import PedidoItem
 from services import facturacion_service, mesa_service
 from services.auth_service import ErrorAcceso
 from services.facturacion_service import ASIGNACION_TODOS
+from ui.campos_comprador import agregar_campos_comprador, leer_campos_comprador
 from ui.tema import (
+    DesplegableProfesional,
     PALETA,
+    PADDING_PANEL_H,
+    PADDING_PANEL_INFERIOR,
     centrar_ventana,
     fuente_boton,
     fuente_normal,
     fuente_pequena,
     fuente_subtitulo,
     fuente_titulo,
+    kwargs_boton_primario,
+    kwargs_boton_secundario,
 )
 
 _MIN_PERSONAS = 2
@@ -73,7 +80,7 @@ class VentanaDividirCuenta(ctk.CTkToplevel):
         self._asignaciones: Dict[int, Union[int, str]] = {
             item.id: ASIGNACION_TODOS for item in items
         }
-        self._selectores: Dict[int, ctk.CTkOptionMenu] = {}
+        self._selectores: Dict[int, DesplegableProfesional] = {}
         self._labels_resumen: Dict[int, ctk.CTkLabel] = {}
 
         self.title(f"Dividir cuenta — Mesa {mesa_numero}")
@@ -81,7 +88,6 @@ class VentanaDividirCuenta(ctk.CTkToplevel):
         self.transient(parent)
         self.grab_set()
         self.minsize(680, 520)
-        centrar_ventana(self, 760, 580)
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -89,6 +95,8 @@ class VentanaDividirCuenta(ctk.CTkToplevel):
         self._construir_encabezado()
         self._construir_cuerpo()
         self._construir_pie()
+
+        centrar_ventana(self, 760, 640, parent=parent)
 
         self._actualizar_selectores_items()
         self._actualizar_resumen()
@@ -154,17 +162,12 @@ class VentanaDividirCuenta(ctk.CTkToplevel):
             font=fuente_pequena(),
             text_color=PALETA["texto_suave"],
         ).pack(anchor="w")
-        self._menu_personas = ctk.CTkOptionMenu(
+        self._menu_personas = DesplegableProfesional(
             marco_personas,
             values=[str(n) for n in range(_MIN_PERSONAS, _MAX_PERSONAS + 1)],
             command=self._al_cambiar_personas,
             height=38,
             font=fuente_normal(),
-            fg_color=PALETA["entrada_fondo"],
-            button_color=PALETA["boton_primario"],
-            button_hover_color=PALETA["boton_primario_hover"],
-            text_color=PALETA["texto"],
-            dropdown_fg_color=PALETA["tarjeta"],
         )
         self._menu_personas.set(str(_MIN_PERSONAS))
         self._menu_personas.pack(fill="x", pady=(4, 0))
@@ -177,16 +180,11 @@ class VentanaDividirCuenta(ctk.CTkToplevel):
             font=fuente_pequena(),
             text_color=PALETA["texto_suave"],
         ).pack(anchor="w")
-        self._menu_pago = ctk.CTkOptionMenu(
+        self._menu_pago = DesplegableProfesional(
             marco_pago,
-            values=["Efectivo", "Billetera digital"],
+            values=[etiqueta for _, etiqueta in METODOS_PAGO],
             height=38,
             font=fuente_normal(),
-            fg_color=PALETA["entrada_fondo"],
-            button_color=PALETA["boton_primario"],
-            button_hover_color=PALETA["boton_primario_hover"],
-            text_color=PALETA["texto"],
-            dropdown_fg_color=PALETA["tarjeta"],
         )
         self._menu_pago.set("Efectivo")
         self._menu_pago.pack(fill="x", pady=(4, 0))
@@ -229,44 +227,58 @@ class VentanaDividirCuenta(ctk.CTkToplevel):
         self._marco_resumen.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 8))
         self._marco_resumen.grid_columnconfigure(0, weight=1)
 
+        marco_comprador = ctk.CTkFrame(
+            panel_der,
+            fg_color=PALETA["fondo"],
+            corner_radius=10,
+            border_width=1,
+            border_color=PALETA["borde"],
+        )
+        marco_comprador.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 8))
+        marco_comprador.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            marco_comprador,
+            text="Datos del comprador (opcional)",
+            font=fuente_pequena(),
+            text_color=PALETA["texto_suave"],
+        ).grid(row=0, column=0, padx=16, pady=(12, 4), sticky="w")
+
+        self._entradas_comprador, _ = agregar_campos_comprador(
+            marco_comprador,
+            fila_inicio=1,
+        )
+
         self._label_total_general = ctk.CTkLabel(
             panel_der,
             text="",
             font=ctk.CTkFont(size=13, weight="bold"),
             text_color=PALETA["texto"],
         )
-        self._label_total_general.grid(row=2, column=0, padx=20, pady=(8, 20), sticky="ew")
+        self._label_total_general.grid(row=3, column=0, padx=20, pady=(8, 20), sticky="ew")
 
     def _construir_pie(self) -> None:
         """Botones cancelar y confirmar."""
         pie = ctk.CTkFrame(self, fg_color="transparent")
-        pie.grid(row=2, column=0, sticky="ew", padx=16, pady=(8, 16))
+        pie.grid(row=2, column=0, sticky="ew", padx=PADDING_PANEL_H, pady=(8, PADDING_PANEL_INFERIOR))
         pie.grid_columnconfigure((0, 1), weight=1)
 
         ctk.CTkButton(
             pie,
             text="Cancelar",
             height=44,
-            corner_radius=10,
             font=fuente_normal(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._cerrar,
+            **kwargs_boton_secundario(),
         ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
         ctk.CTkButton(
             pie,
             text="Confirmar división e imprimir",
             height=44,
-            corner_radius=10,
             font=fuente_boton(),
-            fg_color=PALETA["boton_primario"],
-            hover_color=PALETA["boton_primario_hover"],
-            text_color="#ffffff",
             command=self._confirmar,
+            **kwargs_boton_primario(),
         ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
 
     def _al_cambiar_personas(self, valor: str) -> None:
@@ -318,18 +330,13 @@ class VentanaDividirCuenta(ctk.CTkToplevel):
             ).grid(row=1, column=0, padx=12, pady=(0, 4), sticky="w")
 
             etiqueta_actual = _etiqueta_desde_valor(self._asignaciones[item.id])
-            menu = ctk.CTkOptionMenu(
+            menu = DesplegableProfesional(
                 fila,
                 values=opciones,
                 command=lambda val, iid=item.id: self._al_cambiar_asignacion(iid, val),
                 width=160,
                 height=34,
                 font=fuente_pequena(),
-                fg_color=PALETA["entrada_fondo"],
-                button_color=PALETA["acento"],
-                button_hover_color=PALETA["acento_hover"],
-                text_color=PALETA["texto"],
-                dropdown_fg_color=PALETA["tarjeta"],
             )
             menu.set(etiqueta_actual)
             menu.grid(row=0, column=1, rowspan=2, padx=12, pady=10)
@@ -386,11 +393,7 @@ class VentanaDividirCuenta(ctk.CTkToplevel):
 
     def _metodo_pago_seleccionado(self) -> str:
         """Convierte la etiqueta UI del método de pago al valor del schema."""
-        mapa = {
-            "Efectivo": "efectivo",
-            "Billetera digital": "billetera_digital",
-        }
-        return mapa.get(self._menu_pago.get(), "efectivo")
+        return ETIQUETA_A_METODO_PAGO.get(self._menu_pago.get(), "efectivo")
 
     def _manejar_error(self, error: Exception) -> None:
         """Muestra errores de negocio o acceso."""
@@ -401,12 +404,17 @@ class VentanaDividirCuenta(ctk.CTkToplevel):
 
     def _confirmar(self) -> None:
         """Ejecuta la división, imprime facturas y libera la mesa."""
+        comprador_nombre, comprador_identificacion = leer_campos_comprador(
+            self._entradas_comprador
+        )
         try:
             facturas, resultados = facturacion_service.dividir_e_imprimir_cuenta(
                 self._pedido_id,
                 self._num_personas,
                 self._asignaciones,
                 metodo_pago=self._metodo_pago_seleccionado(),
+                comprador_nombre=comprador_nombre,
+                comprador_identificacion=comprador_identificacion,
             )
         except (ValueError, ErrorAcceso) as error:
             self._manejar_error(error)

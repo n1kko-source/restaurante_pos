@@ -14,7 +14,7 @@ from models.mesa import (
 from models.pedido import Pedido
 from services import mesa_service
 from services.auth_service import ErrorAcceso, requiere_rol
-from ui.tema import PALETA
+from ui.tema import PALETA, kwargs_boton_primario, kwargs_boton_secundario
 
 # Distribución L invertida: 4 filas × 3 columnas (celda [3,0] vacía).
 _POSICIONES_MESA = {
@@ -486,26 +486,18 @@ class VentanaMesas(ctk.CTkFrame):
                 parent,
                 text=texto,
                 height=44,
-                corner_radius=10,
                 font=ctk.CTkFont(size=13, weight="bold"),
-                fg_color=PALETA["boton_primario"],
-                hover_color=PALETA["boton_primario_hover"],
-                text_color="#ffffff",
                 command=comando,
+                **kwargs_boton_primario(),
             ).grid(row=fila, column=0, sticky="ew", pady=5)
         else:
             ctk.CTkButton(
                 parent,
                 text=texto,
                 height=44,
-                corner_radius=10,
-                font=ctk.CTkFont(size=13),
-                fg_color=PALETA["boton_accion"],
-                hover_color="#f1f3f4",
-                text_color=PALETA["texto"],
-                border_width=1,
-                border_color=PALETA["boton_accion_borde"],
+                font=ctk.CTkFont(size=13, weight="bold"),
                 command=comando,
+                **kwargs_boton_secundario(),
             ).grid(row=fila, column=0, sticky="ew", pady=5)
 
     def _actualizar_panel(self) -> None:
@@ -568,10 +560,16 @@ class VentanaMesas(ctk.CTkFrame):
                 self.marco_acciones, 0, "Generar factura", self._accion_generar_factura
             )
             self._crear_boton_accion(
-                self.marco_acciones, 1, "Dividir cuenta", self._accion_dividir_cuenta
+                self.marco_acciones,
+                1,
+                "Cerrar sin imprimir",
+                self._accion_cerrar_sin_imprimir,
             )
             self._crear_boton_accion(
-                self.marco_acciones, 2, "+  Agregar ítem", self._accion_agregar_item
+                self.marco_acciones, 2, "Dividir cuenta", self._accion_dividir_cuenta
+            )
+            self._crear_boton_accion(
+                self.marco_acciones, 3, "+  Agregar ítem", self._accion_agregar_item
             )
         elif mesa.estado == ESTADO_ESPERANDO_PAGO:
             self._crear_boton_accion(
@@ -582,7 +580,13 @@ class VentanaMesas(ctk.CTkFrame):
                 primario=True,
             )
             self._crear_boton_accion(
-                self.marco_acciones, 1, "Dividir cuenta", self._accion_dividir_cuenta
+                self.marco_acciones,
+                1,
+                "Cerrar sin imprimir",
+                self._accion_cerrar_sin_imprimir,
+            )
+            self._crear_boton_accion(
+                self.marco_acciones, 2, "Dividir cuenta", self._accion_dividir_cuenta
             )
 
     def _requiere_mesa_seleccionada(self) -> Optional[Mesa]:
@@ -706,17 +710,26 @@ class VentanaMesas(ctk.CTkFrame):
         )
 
     def _accion_imprimir_factura(self) -> None:
+        """Registra la factura, la envía a Colpos y libera la mesa."""
+        self._procesar_cierre_pedido(imprimir=True)
+
+    def _accion_cerrar_sin_imprimir(self) -> None:
+        """Registra la venta en reportes y libera la mesa sin imprimir en Colpos."""
+        self._procesar_cierre_pedido(imprimir=False)
+
+    def _procesar_cierre_pedido(self, imprimir: bool) -> None:
         """
-        Registra la factura, la envía a Colpos y libera la mesa.
-        Si la impresora no está disponible, guarda la factura y avisa al cajero.
+        Cobro, registro de factura y cierre del pedido.
+        Si imprimir es True, intenta enviar el recibo a la impresora térmica.
         """
         mesa = self._requiere_mesa_seleccionada()
         if mesa is None:
             return
         pedido = mesa_service.obtener_pedido_activo(mesa.id)
         if pedido is None:
+            titulo = "Imprimir factura" if imprimir else "Cerrar pedido"
             messagebox.showwarning(
-                "Imprimir factura",
+                titulo,
                 f"La mesa {mesa.numero} no tiene un pedido activo.",
             )
             return
@@ -727,9 +740,10 @@ class VentanaMesas(ctk.CTkFrame):
             self._manejar_error(error)
             return
         if not items:
+            titulo = "Imprimir factura" if imprimir else "Cerrar pedido"
             messagebox.showwarning(
-                "Imprimir factura",
-                "El pedido no tiene ítems. Agregue productos antes de facturar.",
+                titulo,
+                "El pedido no tiene ítems. Agregue productos antes de cerrar.",
             )
             return
 
@@ -740,35 +754,56 @@ class VentanaMesas(ctk.CTkFrame):
             self.winfo_toplevel(),
             total_pedido,
             mesa.numero,
+            imprimir=imprimir,
         )
         if cobro is None:
             return
-        metodo_pago, descuento = cobro
+        metodo_pago, descuento, comprador_nombre, comprador_identificacion = cobro
 
         try:
             from services import facturacion_service
 
-            factura, ok_impresion, mensaje = (
-                facturacion_service.facturar_e_imprimir_pedido(
+            if imprimir:
+                factura, ok_impresion, mensaje = (
+                    facturacion_service.facturar_e_imprimir_pedido(
+                        pedido.id,
+                        metodo_pago=metodo_pago,
+                        descuento=descuento,
+                        comprador_nombre=comprador_nombre,
+                        comprador_identificacion=comprador_identificacion,
+                    )
+                )
+            else:
+                factura = facturacion_service.crear_factura(
                     pedido.id,
                     metodo_pago=metodo_pago,
                     descuento=descuento,
+                    comprador_nombre=comprador_nombre,
+                    comprador_identificacion=comprador_identificacion,
                 )
-            )
+                ok_impresion = True
+                mensaje = ""
         except (ValueError, ErrorAcceso) as error:
             self._manejar_error(error)
             return
 
-        if ok_impresion:
-            messagebox.showinfo(
-                "Impresión",
-                f"{mensaje}\nFactura {factura.numero} registrada.",
-            )
+        if imprimir:
+            if ok_impresion:
+                messagebox.showinfo(
+                    "Impresión",
+                    f"{mensaje}\nFactura {factura.numero} registrada.",
+                )
+            else:
+                messagebox.showwarning(
+                    "Impresión",
+                    f"Factura {factura.numero} registrada en el sistema.\n\n"
+                    f"No se pudo imprimir:\n{mensaje}",
+                )
         else:
-            messagebox.showwarning(
-                "Impresión",
-                f"Factura {factura.numero} registrada en el sistema.\n\n"
-                f"No se pudo imprimir:\n{mensaje}",
+            messagebox.showinfo(
+                "Pedido cerrado",
+                f"Factura {factura.numero} registrada en reportes.\n"
+                "La mesa quedó libre sin imprimir en Colpos.",
             )
 
         try:

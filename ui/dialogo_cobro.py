@@ -5,7 +5,10 @@ from typing import Optional, Tuple
 
 import customtkinter as ctk
 
+from config import ETIQUETA_A_METODO_PAGO, METODOS_PAGO
+from ui.campos_comprador import agregar_campos_comprador, leer_campos_comprador
 from ui.tema import (
+    DesplegableProfesional,
     PALETA,
     centrar_ventana,
     fuente_boton,
@@ -13,13 +16,11 @@ from ui.tema import (
     fuente_pequena,
     fuente_subtitulo,
     fuente_titulo,
+    kwargs_boton_primario,
+    kwargs_boton_secundario,
 )
 
-_ETIQUETAS_PAGO = ("Efectivo", "Billetera digital")
-_MAPA_METODO_PAGO = {
-    "Efectivo": "efectivo",
-    "Billetera digital": "billetera_digital",
-}
+_ETIQUETAS_PAGO = tuple(etiqueta for _, etiqueta in METODOS_PAGO)
 
 
 def _formatear_pesos(monto: int) -> str:
@@ -36,19 +37,25 @@ def _parsear_monto_cop(texto: str) -> int:
 
 
 class DialogoCobro(ctk.CTkToplevel):
-    """Ventana modal para elegir pago y descuento antes de imprimir la factura."""
+    """Ventana modal para elegir pago, descuento y datos opcionales del comprador."""
 
-    def __init__(self, parent, total_pedido: int, mesa_numero: int):
+    def __init__(
+        self,
+        parent,
+        total_pedido: int,
+        mesa_numero: int,
+        imprimir: bool = True,
+    ):
         super().__init__(parent)
         self._total_pedido = total_pedido
-        self._resultado: Optional[Tuple[str, int]] = None
+        self._resultado: Optional[Tuple[str, int, str, str]] = None
+        texto_confirmar = "Facturar e imprimir" if imprimir else "Cerrar sin imprimir"
 
         self.title(f"Cobro — Mesa {mesa_numero}")
         self.configure(fg_color=PALETA["fondo"])
         self.transient(parent)
         self.grab_set()
         self.resizable(False, False)
-        centrar_ventana(self, 420, 340)
 
         self.grid_columnconfigure(0, weight=1)
 
@@ -82,16 +89,11 @@ class DialogoCobro(ctk.CTkToplevel):
             font=fuente_pequena(),
             text_color=PALETA["texto_suave"],
         ).grid(row=2, column=0, padx=20, sticky="w")
-        self._menu_pago = ctk.CTkOptionMenu(
+        self._menu_pago = DesplegableProfesional(
             marco,
             values=list(_ETIQUETAS_PAGO),
             height=38,
             font=fuente_normal(),
-            fg_color=PALETA["entrada_fondo"],
-            button_color=PALETA["boton_primario"],
-            button_hover_color=PALETA["boton_primario_hover"],
-            text_color=PALETA["texto"],
-            dropdown_fg_color=PALETA["tarjeta"],
         )
         self._menu_pago.set("Efectivo")
         self._menu_pago.grid(row=3, column=0, padx=20, pady=(4, 12), sticky="ew")
@@ -112,10 +114,12 @@ class DialogoCobro(ctk.CTkToplevel):
             placeholder_text="0",
         )
         self._entrada_descuento.insert(0, "0")
-        self._entrada_descuento.grid(row=5, column=0, padx=20, pady=(4, 16), sticky="ew")
+        self._entrada_descuento.grid(row=5, column=0, padx=20, pady=(4, 12), sticky="ew")
+
+        self._entradas_comprador, fila_siguiente = agregar_campos_comprador(marco, fila_inicio=6)
 
         botones = ctk.CTkFrame(marco, fg_color="transparent")
-        botones.grid(row=6, column=0, sticky="ew", padx=20, pady=(0, 18))
+        botones.grid(row=fila_siguiente, column=0, sticky="ew", padx=20, pady=(16, 18))
         botones.grid_columnconfigure((0, 1), weight=1)
 
         ctk.CTkButton(
@@ -123,33 +127,28 @@ class DialogoCobro(ctk.CTkToplevel):
             text="Cancelar",
             height=42,
             font=fuente_normal(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._cancelar,
+            **kwargs_boton_secundario(),
         ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
         ctk.CTkButton(
             botones,
-            text="Facturar e imprimir",
+            text=texto_confirmar,
             height=42,
             font=fuente_boton(),
-            fg_color=PALETA["boton_primario"],
-            hover_color=PALETA["boton_primario_hover"],
-            text_color="#ffffff",
             command=self._confirmar,
+            **kwargs_boton_primario(),
         ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
 
+        centrar_ventana(self, 440, 520, parent=parent)
         self.protocol("WM_DELETE_WINDOW", self._cancelar)
         self.bind("<Return>", lambda _e: self._confirmar())
         self.bind("<Escape>", lambda _e: self._cancelar())
         self._entrada_descuento.focus_set()
 
     @property
-    def resultado(self) -> Optional[Tuple[str, int]]:
-        """Retorna (metodo_pago, descuento) o None si el usuario canceló."""
+    def resultado(self) -> Optional[Tuple[str, int, str, str]]:
+        """Retorna (metodo_pago, descuento, comprador_nombre, comprador_id) o None."""
         return self._resultado
 
     def _cancelar(self) -> None:
@@ -185,8 +184,16 @@ class DialogoCobro(ctk.CTkToplevel):
             return
 
         etiqueta = self._menu_pago.get()
-        metodo_pago = _MAPA_METODO_PAGO.get(etiqueta, "efectivo")
-        self._resultado = (metodo_pago, descuento)
+        metodo_pago = ETIQUETA_A_METODO_PAGO.get(etiqueta, "efectivo")
+        comprador_nombre, comprador_identificacion = leer_campos_comprador(
+            self._entradas_comprador
+        )
+        self._resultado = (
+            metodo_pago,
+            descuento,
+            comprador_nombre,
+            comprador_identificacion,
+        )
         self.destroy()
 
 
@@ -194,12 +201,14 @@ def solicitar_cobro(
     parent,
     total_pedido: int,
     mesa_numero: int,
-) -> Optional[Tuple[str, int]]:
+    imprimir: bool = True,
+) -> Optional[Tuple[str, int, str, str]]:
     """
-    Abre el diálogo de cobro y retorna (metodo_pago, descuento) o None si cancela.
+    Abre el diálogo de cobro y retorna datos del cierre o None si cancela.
 
-    metodo_pago usa los valores del schema: 'efectivo' | 'billetera_digital'.
+    Retorna (metodo_pago, descuento, comprador_nombre, comprador_identificacion).
+    metodo_pago usa los códigos del schema: efectivo, daviplata, nequi, anotar.
     """
-    dialogo = DialogoCobro(parent, total_pedido, mesa_numero)
+    dialogo = DialogoCobro(parent, total_pedido, mesa_numero, imprimir=imprimir)
     parent.wait_window(dialogo)
     return dialogo.resultado

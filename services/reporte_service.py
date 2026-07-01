@@ -4,13 +4,14 @@ Flujo de capas: ui/ -> services/reporte_service.py -> database/db_manager.py
 Este módulo nunca importa CustomTkinter ni nada de ui/.
 """
 
-from datetime import datetime
+import math
 from typing import Any, Dict, List, Optional, Tuple
 
 import database.db_manager as db
-from config import PAGINA_TAMANO_DEFAULT
+from config import METODOS_PAGO, PAGINA_TAMANO_DEFAULT
 from models.cierre import Cierre
 from services.auth_service import requiere_rol
+from services import hora_service
 
 
 def _validar_fecha(fecha: str) -> None:
@@ -55,12 +56,22 @@ def _cierre_a_dict(cierre: Cierre) -> Dict[str, Any]:
     }
 
 
-def _consolidar_ventas_por_producto(fecha: str) -> List[Dict[str, Any]]:
+def _consolidar_totales_por_metodo_pago(fecha: str) -> Dict[str, int]:
+    """Arma totales netos por método de pago; métodos sin ventas quedan en 0."""
+    totales = {codigo: 0 for codigo, _ in METODOS_PAGO}
+    for fila in db.obtener_totales_ventas_dia_por_metodo_pago(fecha):
+        metodo = fila["metodo_pago"]
+        if metodo in totales:
+            totales[metodo] = int(fila["total"])
+    return totales
+
+
+def _cargar_detalle_ventas_dia(fecha: str) -> List[Dict[str, Any]]:
     """
-    Agrega ventas por producto leyendo renglones paginados (cursor por páginas).
-    No carga todos los detalles del día en memoria de una sola vez.
+    Carga renglones de venta del día agrupados por número de factura.
+    Pagina en bloques para no cargar todo el día en memoria de una vez.
     """
-    acumulado: Dict[int, Dict[str, Any]] = {}
+    detalle: List[Dict[str, Any]] = []
     pagina = 1
 
     while True:
@@ -71,25 +82,23 @@ def _consolidar_ventas_por_producto(fecha: str) -> List[Dict[str, Any]]:
             break
 
         for fila in filas:
-            producto_id = fila["producto_id"]
-            if producto_id not in acumulado:
-                acumulado[producto_id] = {
-                    "producto_id": producto_id,
+            detalle.append(
+                {
+                    "factura_numero": fila["factura_numero"],
+                    "metodo_pago": fila["metodo_pago"],
+                    "comprador_nombre": fila["comprador_nombre"] or "",
+                    "producto_id": fila["producto_id"],
                     "nombre_producto": fila["nombre_producto"],
-                    "cantidad": 0,
-                    "subtotal": 0,
+                    "cantidad": int(fila["cantidad"]),
+                    "subtotal": int(fila["subtotal"]),
                 }
-            acumulado[producto_id]["cantidad"] += fila["cantidad"]
-            acumulado[producto_id]["subtotal"] += fila["subtotal"]
+            )
 
         if len(filas) < PAGINA_TAMANO_DEFAULT:
             break
         pagina += 1
 
-    return sorted(
-        acumulado.values(),
-        key=lambda item: item["nombre_producto"].lower(),
-    )
+    return detalle
 
 
 def _cargar_cierres_mes(anio: int, mes: int) -> List[Cierre]:
@@ -123,7 +132,7 @@ def _registrar_cierre_si_ausente(
     if existente is not None:
         return False, _cierre_desde_fila(existente)
 
-    generado_en = datetime.now().isoformat(timespec="seconds")
+    generado_en = hora_service.obtener_datetime_actual().isoformat(timespec="seconds")
     cierre_id = db.crear_cierre_diario(
         fecha, total_ventas, numero_facturas, generado_en
     )
@@ -144,15 +153,16 @@ def reporte_diario(fecha: str) -> Dict[str, Any]:
     """
     Consolida las ventas pagadas de un día y registra el cierre en cierres_diarios.
 
-    Retorna dict con total_ventas, numero_facturas y ventas_por_producto
-    (lista de {producto_id, nombre_producto, cantidad, subtotal}).
+    Retorna dict con total_ventas, numero_facturas, detalle_ventas
+    (renglones por factura) y totales_por_metodo_pago.
     """
     _validar_fecha(fecha)
 
     resumen = db.obtener_resumen_ventas_dia(fecha)
     total_ventas = int(resumen["total_ventas"])
     numero_facturas = int(resumen["numero_facturas"])
-    ventas_por_producto = _consolidar_ventas_por_producto(fecha)
+    detalle_ventas = _cargar_detalle_ventas_dia(fecha)
+    totales_por_metodo_pago = _consolidar_totales_por_metodo_pago(fecha)
 
     cierre_nuevo, cierre = _registrar_cierre_si_ausente(
         fecha, total_ventas, numero_facturas
@@ -162,7 +172,8 @@ def reporte_diario(fecha: str) -> Dict[str, Any]:
         "fecha": fecha,
         "total_ventas": total_ventas,
         "numero_facturas": numero_facturas,
-        "ventas_por_producto": ventas_por_producto,
+        "detalle_ventas": detalle_ventas,
+        "totales_por_metodo_pago": totales_por_metodo_pago,
         "cierre_registrado": cierre_nuevo,
         "cierre": _cierre_a_dict(cierre),
     }
@@ -187,4 +198,93 @@ def reporte_mensual(anio: int, mes: int) -> Dict[str, Any]:
         "total_ventas": int(resumen["total_ventas"]),
         "numero_facturas": int(resumen["numero_facturas"]),
         "cierres_diarios": [_cierre_a_dict(cierre) for cierre in cierres],
+    }
+
+
+def _factura_resumen_desde_fila(fila) -> Dict[str, Any]:
+    """Serializa una fila de facturas para listados en reportes."""
+    total_neto = int(fila["total"]) - int(fila["descuento"])
+    return {
+        "id": fila["id"],
+        "numero": fila["numero"],
+        "fecha": fila["fecha"],
+        "hora": fila["hora"],
+        "total": int(fila["total"]),
+        "descuento": int(fila["descuento"]),
+        "total_neto": total_neto,
+        "estado": fila["estado"],
+        "comprador_nombre": fila["comprador_nombre"] or "",
+    }
+
+
+def _calcular_total_paginas(total: int, por_pagina: int) -> int:
+    """Calcula el número de páginas para un listado paginado."""
+    if total <= 0:
+        return 1
+    return max(1, math.ceil(total / por_pagina))
+
+
+@requiere_rol("supervisor", "administrador")
+def listar_facturas_dia(
+    fecha: str, pagina: int = 1, por_pagina: int = PAGINA_TAMANO_DEFAULT
+) -> Dict[str, Any]:
+    """
+    Retorna el historial paginado de facturas de un día.
+
+    Cada factura incluye id, numero, hora, total_neto, comprador_nombre y estado.
+    """
+    _validar_fecha(fecha)
+    pagina = max(1, pagina)
+    total = db.obtener_total_facturas_fecha(fecha)
+    filas = db.obtener_facturas_por_fecha_pagina(fecha, pagina, por_pagina)
+    return {
+        "fecha": fecha,
+        "facturas": [_factura_resumen_desde_fila(fila) for fila in filas],
+        "pagina": pagina,
+        "por_pagina": por_pagina,
+        "total": total,
+        "total_paginas": _calcular_total_paginas(total, por_pagina),
+    }
+
+
+@requiere_rol("supervisor", "administrador")
+def contar_cola_impresion() -> int:
+    """Retorna cuántas facturas están pendientes de impresión."""
+    return db.obtener_total_cola_impresion()
+
+
+@requiere_rol("supervisor", "administrador")
+def listar_cola_impresion(
+    pagina: int = 1, por_pagina: int = PAGINA_TAMANO_DEFAULT
+) -> Dict[str, Any]:
+    """
+    Retorna facturas que no se pudieron imprimir y quedaron en cola.
+
+    Cada registro incluye datos de la factura y el último error registrado.
+    """
+    pagina = max(1, pagina)
+    total = db.obtener_total_cola_impresion()
+    filas = db.obtener_cola_impresion_pagina(pagina, por_pagina)
+    registros: List[Dict[str, Any]] = []
+    for fila in filas:
+        total_neto = int(fila["total"]) - int(fila["descuento"])
+        registros.append(
+            {
+                "cola_id": fila["cola_id"],
+                "factura_id": fila["factura_id"],
+                "numero": fila["numero"],
+                "fecha": fila["fecha"],
+                "hora": fila["hora"],
+                "total_neto": total_neto,
+                "error_ultimo": fila["error_ultimo"] or "",
+                "intentos": int(fila["intentos"]),
+                "registrado_en": fila["registrado_en"],
+            }
+        )
+    return {
+        "registros": registros,
+        "pagina": pagina,
+        "por_pagina": por_pagina,
+        "total": total,
+        "total_paginas": _calcular_total_paginas(total, por_pagina),
     }
