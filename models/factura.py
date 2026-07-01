@@ -34,10 +34,12 @@ class Factura:
     hora: str              # 'HH:MM:SS' 24h
     total: int             # pesos COP enteros
     descuento: int         # pesos COP enteros
-    metodo_pago: str       # 'efectivo' | 'billetera_digital'
+    metodo_pago: str       # 'efectivo' | 'daviplata' | 'nequi' | 'anotar'
     estado: str            # 'pagada' | 'anulada'
     es_parcial: int        # 0 | 1
     grupo_division: Optional[str] = None
+    comprador_nombre: str = ""
+    comprador_identificacion: str = ""
 
     def total_neto(self) -> int:
         """Retorna el total después de aplicar el descuento."""

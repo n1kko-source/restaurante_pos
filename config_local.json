@@ -1,0 +1,12 @@
+{
+  "plantilla_factura": {
+    "titulo_documento": "Factura Electrónica de Venta",
+    "razon_social": "Restaurante Hogareños",
+    "nit": "",
+    "direccion": "Cra 15 # 23-45, Bogotá",
+    "regimen_tributario": "",
+    "comprador_nombre": "",
+    "comprador_identificacion": "",
+    "usar_logo_personalizado": false
+  }
+}

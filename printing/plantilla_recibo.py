@@ -1,9 +1,10 @@
 """Formato y contenido del recibo térmico impreso."""
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Optional, Tuple
 
-from config import RESTAURANTE
+from config import ETIQUETAS_METODO_PAGO, RESTAURANTE
 from models.factura import Factura, FacturaDetalle
 
 # Anchos estándar ESC/POS para papel térmico.
@@ -20,8 +21,18 @@ class FacturaImpresion:
     factura: Factura
     detalles: List[FacturaDetalle] = field(default_factory=list)
     mesa_numero: Optional[int] = None
+    # Compatibilidad con código existente; la plantilla usa razon_social/direccion.
     nombre_restaurante: str = RESTAURANTE["nombre"]
     direccion_restaurante: str = RESTAURANTE["direccion"]
+    # Encabezado configurable (vacío = no se imprime la línea).
+    titulo_documento: str = ""
+    razon_social: str = ""
+    nit: str = ""
+    direccion: str = ""
+    regimen_tributario: str = ""
+    comprador_nombre: str = ""
+    comprador_identificacion: str = ""
+    ruta_logo: Optional[Path] = None
 
 
 def normalizar_ancho_papel(ancho_config: int) -> int:
@@ -112,17 +123,37 @@ def _encabezado_tabla_items(ancho: int) -> str:
 
 def _etiqueta_metodo_pago(metodo_pago: str) -> str:
     """Traduce el método de pago del schema a texto legible en el recibo."""
-    etiquetas = {
-        "efectivo": "Efectivo",
+    etiquetas_legacy = {
         "billetera_digital": "Billetera digital",
     }
-    return etiquetas.get(metodo_pago, metodo_pago)
+    if metodo_pago in etiquetas_legacy:
+        return etiquetas_legacy[metodo_pago]
+    return ETIQUETAS_METODO_PAGO.get(metodo_pago, metodo_pago)
 
 
 def _formatear_fecha_hora(fecha: str, hora: str) -> str:
     """Combina fecha ISO y hora 24h para el encabezado del recibo."""
     hora_corta = hora[:5] if len(hora) >= 5 else hora
     return f"{fecha}  {hora_corta}"
+
+
+def _agregar_linea_centrada(
+    lineas: List[str], texto: str, ancho: int, mayusculas: bool = False
+) -> None:
+    """Añade una línea centrada solo si el texto no está vacío."""
+    limpio = texto.strip()
+    if not limpio:
+        return
+    if mayusculas:
+        limpio = limpio.upper()
+    lineas.append(_centrar(limpio, ancho))
+
+
+def _agregar_linea_izquierda(lineas: List[str], texto: str) -> None:
+    """Añade una línea alineada a la izquierda solo si el texto no está vacío."""
+    limpio = texto.strip()
+    if limpio:
+        lineas.append(limpio)
 
 
 def generar_lineas_recibo(
@@ -133,14 +164,34 @@ def generar_lineas_recibo(
     Genera las líneas de texto del recibo según el ancho de papel configurado.
 
     Compatible con papel 58 mm (32 caracteres) y 80 mm (48 caracteres).
+    Los campos de plantilla vacíos no generan línea en el recibo.
     """
     ancho = normalizar_ancho_papel(ancho_papel)
     factura = datos.factura
     lineas: List[str] = []
 
-    lineas.append(_centrar(datos.nombre_restaurante.upper(), ancho))
-    if datos.direccion_restaurante.strip():
-        lineas.append(_centrar(datos.direccion_restaurante, ancho))
+    razon = datos.razon_social.strip() or datos.nombre_restaurante.strip()
+    direccion = datos.direccion.strip() or datos.direccion_restaurante.strip()
+
+    _agregar_linea_centrada(lineas, datos.titulo_documento, ancho, mayusculas=True)
+    _agregar_linea_centrada(lineas, razon, ancho, mayusculas=True)
+    if datos.nit.strip():
+        _agregar_linea_centrada(lineas, f"NIT: {datos.nit.strip()}", ancho)
+    _agregar_linea_centrada(lineas, direccion, ancho)
+    _agregar_linea_centrada(lineas, datos.regimen_tributario, ancho)
+
+    if datos.comprador_nombre.strip() or datos.comprador_identificacion.strip():
+        lineas.append(_linea_separadora(ancho))
+        if datos.comprador_nombre.strip():
+            _agregar_linea_izquierda(
+                lineas, f"Comprador: {datos.comprador_nombre.strip()}"
+            )
+        if datos.comprador_identificacion.strip():
+            _agregar_linea_izquierda(
+                lineas,
+                f"Identificación: {datos.comprador_identificacion.strip()}",
+            )
+
     lineas.append(_centrar(_formatear_fecha_hora(factura.fecha, factura.hora), ancho))
     lineas.append(_linea_separadora(ancho))
 

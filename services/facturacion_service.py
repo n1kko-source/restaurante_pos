@@ -5,10 +5,9 @@ Este módulo nunca importa CustomTkinter ni nada de ui/.
 """
 
 import time
-from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 
-from config import RESTAURANTE
+from config import METODOS_PAGO_VALIDOS, RESTAURANTE
 import database.db_manager as db
 from models.factura import Factura, FacturaDetalle
 from models.pedido import PedidoItem
@@ -16,6 +15,7 @@ from printing.colpos_printer import ColposPrinter, ErrorImpresora
 from printing.plantilla_recibo import FacturaImpresion
 from services import mesa_service
 from services.auth_service import requiere_rol
+from services import hora_service
 
 # Asignación compartida entre todas las personas en división de cuenta.
 ASIGNACION_TODOS = "todos"
@@ -23,54 +23,23 @@ ASIGNACION_TODOS = "todos"
 _MIN_PERSONAS_DIVISION = 2
 _MAX_PERSONAS_DIVISION = 8
 
-_METODOS_PAGO_VALIDOS = frozenset({"efectivo", "billetera_digital"})
-
-
 # ============================================================
 # HELPERS INTERNOS
 # ============================================================
 
 def _obtener_fecha_hora_actual() -> Tuple[str, str]:
-    """
-    Retorna (fecha, hora) del reloj local en formatos del schema.
-    Valida rangos semánticos antes de insertar en facturas.
-    """
-    ahora = datetime.now()
-    fecha = ahora.strftime("%Y-%m-%d")
-    hora = ahora.strftime("%H:%M:%S")
-    partes = hora.split(":")
-    if len(partes) != 3:
-        raise ValueError("La hora del sistema no tiene un formato válido.")
-    horas, minutos, segundos = (int(p) for p in partes)
-    if not (0 <= horas <= 23 and 0 <= minutos <= 59 and 0 <= segundos <= 59):
-        raise ValueError(
-            "La hora del sistema no es válida. Revise la configuración del equipo."
-        )
-    return fecha, hora
+    """Delega en hora_service la obtención validada de fecha y hora."""
+    return hora_service.obtener_fecha_hora_actual()
 
 
 def _validar_fecha(fecha: str) -> None:
-    """Valida formato ISO y rangos semánticos básicos de una fecha."""
-    if len(fecha) != 10 or fecha[4] != "-" or fecha[7] != "-":
-        raise ValueError(f"Fecha inválida: '{fecha}'. Use formato YYYY-MM-DD.")
-    try:
-        anio, mes, dia = (int(p) for p in fecha.split("-"))
-    except ValueError:
-        raise ValueError(f"Fecha inválida: '{fecha}'.")
-    if not (1 <= mes <= 12 and 1 <= dia <= 31 and anio >= 1):
-        raise ValueError(f"Fecha fuera de rango: '{fecha}'.")
+    """Delega la validación semántica de fecha en hora_service."""
+    hora_service.validar_fecha(fecha)
 
 
 def _validar_hora(hora: str) -> None:
-    """Valida formato HH:MM:SS y rangos semánticos de una hora."""
-    if len(hora) != 8 or hora[2] != ":" or hora[5] != ":":
-        raise ValueError(f"Hora inválida: '{hora}'. Use formato HH:MM:SS.")
-    try:
-        horas, minutos, segundos = (int(p) for p in hora.split(":"))
-    except ValueError:
-        raise ValueError(f"Hora inválida: '{hora}'.")
-    if not (0 <= horas <= 23 and 0 <= minutos <= 59 and 0 <= segundos <= 59):
-        raise ValueError(f"Hora fuera de rango: '{hora}'.")
+    """Delega la validación semántica de hora en hora_service."""
+    hora_service.validar_hora(hora)
 
 
 def _formatear_numero_factura(fecha: str, secuencia: int) -> str:
@@ -89,6 +58,7 @@ def _formatear_numero_factura(fecha: str, secuencia: int) -> str:
 
 def _factura_desde_fila(fila) -> Factura:
     """Convierte una fila sqlite3.Row de facturas en instancia Factura."""
+    keys = fila.keys()
     return Factura(
         id=fila["id"],
         numero=fila["numero"],
@@ -102,6 +72,12 @@ def _factura_desde_fila(fila) -> Factura:
         estado=fila["estado"],
         es_parcial=fila["es_parcial"],
         grupo_division=fila["grupo_division"],
+        comprador_nombre=fila["comprador_nombre"] if "comprador_nombre" in keys else "",
+        comprador_identificacion=(
+            fila["comprador_identificacion"]
+            if "comprador_identificacion" in keys
+            else ""
+        ),
     )
 
 
@@ -120,10 +96,10 @@ def _detalle_desde_fila(fila) -> FacturaDetalle:
 
 def _validar_metodo_pago(metodo_pago: str) -> None:
     """Lanza ValueError si el método de pago no está permitido por el schema."""
-    if metodo_pago not in _METODOS_PAGO_VALIDOS:
+    if metodo_pago not in METODOS_PAGO_VALIDOS:
         raise ValueError(
             f"Método de pago inválido: '{metodo_pago}'. "
-            f"Valores permitidos: {', '.join(sorted(_METODOS_PAGO_VALIDOS))}."
+            f"Valores permitidos: {', '.join(sorted(METODOS_PAGO_VALIDOS))}."
         )
 
 
@@ -332,6 +308,8 @@ def crear_factura(
     pedido_id: int,
     metodo_pago: str,
     descuento: int = 0,
+    comprador_nombre: str = "",
+    comprador_identificacion: str = "",
 ) -> Factura:
     """
     Registra una factura completa con sus detalles a partir del pedido activo.
@@ -359,6 +337,8 @@ def crear_factura(
         detalles=detalles,
         es_parcial=0,
         grupo_division=None,
+        comprador_nombre=comprador_nombre,
+        comprador_identificacion=comprador_identificacion,
     )
 
     fila_factura = db.obtener_factura_por_id(factura_id)
@@ -375,6 +355,8 @@ def dividir_cuenta(
     num_personas: int,
     asignaciones: Dict[int, Union[int, str]],
     metodo_pago: str = "efectivo",
+    comprador_nombre: str = "",
+    comprador_identificacion: str = "",
 ) -> List[Factura]:
     """
     Divide el pedido en N facturas independientes según las asignaciones.
@@ -412,6 +394,8 @@ def dividir_cuenta(
             detalles=detalles,
             es_parcial=1,
             grupo_division=grupo_division,
+            comprador_nombre=comprador_nombre,
+            comprador_identificacion=comprador_identificacion,
         )
         fila_factura = db.obtener_factura_por_id(factura_id)
         if fila_factura is None:
@@ -489,18 +473,29 @@ def obtener_datos_impresion(factura_id: int) -> Optional[FacturaImpresion]:
     Arma el paquete completo de datos para imprimir una factura en Colpos.
     Incluye número de mesa visible si la mesa aún existe en el salón.
     """
+    from services import plantilla_factura_service
+
     factura = obtener_factura(factura_id)
     if factura is None:
         return None
 
     detalles = obtener_detalles_factura(factura_id)
     mesa = mesa_service.obtener_mesa(factura.mesa_id)
+    plantilla = plantilla_factura_service.obtener_config_plantilla()
     return FacturaImpresion(
         factura=factura,
         detalles=detalles,
         mesa_numero=mesa.numero if mesa is not None else None,
-        nombre_restaurante=RESTAURANTE["nombre"],
-        direccion_restaurante=RESTAURANTE["direccion"],
+        nombre_restaurante=plantilla.get("razon_social") or RESTAURANTE["nombre"],
+        direccion_restaurante=plantilla.get("direccion") or RESTAURANTE["direccion"],
+        titulo_documento=plantilla.get("titulo_documento", ""),
+        razon_social=plantilla.get("razon_social", ""),
+        nit=plantilla.get("nit", ""),
+        direccion=plantilla.get("direccion", ""),
+        regimen_tributario=plantilla.get("regimen_tributario", ""),
+        comprador_nombre=factura.comprador_nombre,
+        comprador_identificacion=factura.comprador_identificacion,
+        ruta_logo=plantilla_factura_service.obtener_ruta_logo_efectiva(),
     )
 
 
@@ -511,15 +506,34 @@ def _imprimir_datos_factura(datos: FacturaImpresion) -> Tuple[bool, str]:
     """
     impresora = ColposPrinter()
     if not impresora.conectar():
-        return False, impresora.ultimo_error
+        mensaje = impresora.ultimo_error
+        _gestionar_cola_impresion(datos.factura.id, False, mensaje)
+        return False, mensaje
 
     try:
         impresora.imprimir_factura(datos)
-        return True, f"Factura {datos.factura.numero} enviada a impresora."
+        mensaje = f"Factura {datos.factura.numero} enviada a impresora."
+        _gestionar_cola_impresion(datos.factura.id, True, "")
+        return True, mensaje
     except ErrorImpresora as error:
-        return False, str(error)
+        mensaje = str(error)
+        _gestionar_cola_impresion(datos.factura.id, False, mensaje)
+        return False, mensaje
     finally:
         impresora.desconectar()
+
+
+def _gestionar_cola_impresion(
+    factura_id: int, exito: bool, mensaje_error: str
+) -> None:
+    """Registra o retira una factura de la cola según el resultado de impresión."""
+    if exito:
+        db.quitar_de_cola_impresion(factura_id)
+        return
+    registrado_en = hora_service.obtener_datetime_actual().isoformat(
+        timespec="seconds"
+    )
+    db.registrar_cola_impresion(factura_id, mensaje_error, registrado_en)
 
 
 @requiere_rol("cajero", "supervisor", "administrador")
@@ -543,6 +557,8 @@ def facturar_e_imprimir_pedido(
     pedido_id: int,
     metodo_pago: str,
     descuento: int = 0,
+    comprador_nombre: str = "",
+    comprador_identificacion: str = "",
 ) -> Tuple[Factura, bool, str]:
     """
     Registra la factura del pedido activo e intenta imprimirla en Colpos.
@@ -550,7 +566,13 @@ def facturar_e_imprimir_pedido(
     Retorna (factura, éxito_impresión, mensaje). La factura queda guardada
     aunque falle la impresión física.
     """
-    factura = crear_factura(pedido_id, metodo_pago, descuento)
+    factura = crear_factura(
+        pedido_id,
+        metodo_pago,
+        descuento,
+        comprador_nombre=comprador_nombre,
+        comprador_identificacion=comprador_identificacion,
+    )
     datos = obtener_datos_impresion(factura.id)
     if datos is None:
         return factura, False, "No se pudieron cargar los datos de la factura."
@@ -564,6 +586,8 @@ def dividir_e_imprimir_cuenta(
     num_personas: int,
     asignaciones: Dict[int, Union[int, str]],
     metodo_pago: str = "efectivo",
+    comprador_nombre: str = "",
+    comprador_identificacion: str = "",
 ) -> Tuple[List[Factura], List[Tuple[int, bool, str]]]:
     """
     Divide el pedido en N facturas e intenta imprimir cada una.
@@ -572,7 +596,12 @@ def dividir_e_imprimir_cuenta(
     (factura_id, éxito, mensaje).
     """
     facturas = dividir_cuenta(
-        pedido_id, num_personas, asignaciones, metodo_pago=metodo_pago
+        pedido_id,
+        num_personas,
+        asignaciones,
+        metodo_pago=metodo_pago,
+        comprador_nombre=comprador_nombre,
+        comprador_identificacion=comprador_identificacion,
     )
     resultados: List[Tuple[int, bool, str]] = []
     for factura in facturas:

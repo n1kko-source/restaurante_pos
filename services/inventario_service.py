@@ -5,13 +5,13 @@ Este módulo nunca importa CustomTkinter ni nada de ui/.
 """
 
 import math
-from datetime import datetime
 from typing import List, Optional, Tuple
 
 import database.db_manager as db
 from config import PAGINA_TAMANO_DEFAULT
 from models.producto import ProductoListado
 from services.auth_service import requiere_rol
+from services import hora_service
 
 TIPO_ALERTA_DOMINICAL = "inventario_dominical"
 
@@ -93,7 +93,7 @@ def verificar_alerta_dominical() -> Optional[str]:
 
     Retorna None si no corresponde mostrar la alerta.
     """
-    ahora = datetime.now()
+    ahora = hora_service.obtener_datetime_actual()
     if ahora.weekday() != 6:
         return None
     if ahora.hour < 18:

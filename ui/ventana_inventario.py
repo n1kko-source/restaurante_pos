@@ -10,10 +10,14 @@ from services import inventario_service
 from services.auth_service import ErrorAcceso, requiere_rol
 from ui.tema import (
     PALETA,
+    PADDING_PANEL_H,
+    PADDING_PANEL_INFERIOR,
     fuente_boton,
     fuente_normal,
     fuente_pequena,
     fuente_titulo,
+    kwargs_boton_primario,
+    kwargs_boton_secundario,
 )
 
 
@@ -79,7 +83,7 @@ class VentanaInventario(ctk.CTkFrame):
         ).grid(row=0, column=0, padx=20, pady=(18, 12), sticky="w")
 
         marco_tree = ctk.CTkFrame(panel, fg_color="transparent")
-        marco_tree.grid(row=1, column=0, padx=16, pady=(0, 8), sticky="nsew")
+        marco_tree.grid(row=1, column=0, padx=PADDING_PANEL_H, pady=(0, 8), sticky="nsew")
         marco_tree.grid_columnconfigure(0, weight=1)
         marco_tree.grid_rowconfigure(0, weight=1)
 
@@ -117,7 +121,7 @@ class VentanaInventario(ctk.CTkFrame):
         self._tree.bind("<<TreeviewSelect>>", lambda _e: self._actualizar_botones())
 
         paginacion = ctk.CTkFrame(panel, fg_color="transparent")
-        paginacion.grid(row=2, column=0, padx=16, pady=(0, 8), sticky="ew")
+        paginacion.grid(row=2, column=0, padx=PADDING_PANEL_H, pady=(0, 8), sticky="ew")
         paginacion.grid_columnconfigure(1, weight=1)
 
         self._btn_ant = ctk.CTkButton(
@@ -126,12 +130,8 @@ class VentanaInventario(ctk.CTkFrame):
             width=100,
             height=32,
             font=fuente_pequena(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._pagina_anterior,
+            **kwargs_boton_secundario(),
         )
         self._btn_ant.grid(row=0, column=0, padx=(4, 8))
 
@@ -149,17 +149,15 @@ class VentanaInventario(ctk.CTkFrame):
             width=100,
             height=32,
             font=fuente_pequena(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._pagina_siguiente,
+            **kwargs_boton_secundario(),
         )
         self._btn_sig.grid(row=0, column=2, padx=(8, 4))
 
         acciones = ctk.CTkFrame(panel, fg_color="transparent")
-        acciones.grid(row=3, column=0, padx=16, pady=(0, 16), sticky="ew")
+        acciones.grid(
+            row=3, column=0, padx=PADDING_PANEL_H, pady=(4, PADDING_PANEL_INFERIOR), sticky="ew"
+        )
         acciones.grid_columnconfigure((0, 1, 2), weight=1)
 
         self._btn_menos = ctk.CTkButton(
@@ -167,13 +165,9 @@ class VentanaInventario(ctk.CTkFrame):
             text="−  Quitar stock",
             height=42,
             font=fuente_boton(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._accion_decrementar,
             state="disabled",
+            **kwargs_boton_secundario(),
         )
         self._btn_menos.grid(row=0, column=0, sticky="ew", padx=(0, 6))
 
@@ -182,11 +176,9 @@ class VentanaInventario(ctk.CTkFrame):
             text="+  Agregar stock",
             height=42,
             font=fuente_boton(),
-            fg_color=PALETA["boton_primario"],
-            hover_color=PALETA["boton_primario_hover"],
-            text_color="#ffffff",
             command=self._accion_incrementar,
             state="disabled",
+            **kwargs_boton_primario(),
         )
         self._btn_mas.grid(row=0, column=1, sticky="ew", padx=6)
 
@@ -195,12 +187,8 @@ class VentanaInventario(ctk.CTkFrame):
             text="Actualizar",
             height=42,
             font=fuente_normal(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self.refrescar,
+            **kwargs_boton_secundario(),
         ).grid(row=0, column=2, sticky="ew", padx=(6, 0))
 
     def refrescar(self) -> None:

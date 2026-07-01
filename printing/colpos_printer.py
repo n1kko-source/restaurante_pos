@@ -1,9 +1,9 @@
 """Integración con impresora térmica Colpos vía python-escpos (COM/USB)."""
 
 import logging
+from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
-from config import IMPRESORA
 from printing.plantilla_recibo import FacturaImpresion, formatear_recibo
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,11 @@ class ColposPrinter:
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self._config = dict(config or IMPRESORA)
+        if config is None:
+            from services.impresora_service import obtener_config_impresora
+
+            config = obtener_config_impresora()
+        self._config = dict(config)
         self._impresora: Any = None
         self._ultimo_error = ""
         self._ancho_papel = int(self._config.get("ancho_papel", 32))
@@ -114,6 +118,7 @@ class ColposPrinter:
             )
 
         try:
+            self._imprimir_logo_si_hay(factura.ruta_logo)
             texto = formatear_recibo(factura, self._ancho_papel)
             for linea in texto.splitlines():
                 self._impresora.textln(linea)
@@ -124,6 +129,26 @@ class ColposPrinter:
             self._ultimo_error = f"Error al imprimir la factura: {exc}"
             logger.warning(self._ultimo_error)
             raise ErrorImpresora(self._ultimo_error) from exc
+
+    def _imprimir_logo_si_hay(self, ruta_logo) -> None:
+        """Imprime el logotipo PNG centrado si existe; no falla si hay error."""
+        if ruta_logo is None:
+            return
+        ruta = Path(ruta_logo) if not isinstance(ruta_logo, Path) else ruta_logo
+        if not ruta.is_file():
+            return
+        try:
+            from PIL import Image
+
+            imagen = Image.open(ruta)
+            if imagen.mode not in ("RGB", "L"):
+                imagen = imagen.convert("RGB")
+            if hasattr(self._impresora, "set"):
+                self._impresora.set(align="center")
+            self._impresora.image(imagen)
+            self._impresora.textln("")
+        except Exception as exc:
+            logger.warning("No se pudo imprimir el logotipo: %s", exc)
 
     def cortar_papel(self) -> None:
         """Envía el comando ESC/POS de corte de papel."""

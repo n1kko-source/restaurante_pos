@@ -10,12 +10,19 @@ from models.producto import ProductoListado
 from services import menu_service
 from services.auth_service import ErrorAcceso, requiere_rol
 from ui.tema import (
+    DesplegableProfesional,
     PALETA,
+    aplicar_icono_ventana,
+    centrar_ventana_sobre_padre,
+    PADDING_PANEL_H,
+    PADDING_PANEL_INFERIOR,
     fuente_boton,
     fuente_normal,
     fuente_pequena,
     fuente_subtitulo,
     fuente_titulo,
+    kwargs_boton_primario,
+    kwargs_boton_secundario,
 )
 
 
@@ -74,6 +81,7 @@ class _DialogoTexto(ctk.CTkToplevel):
 
         self.title(titulo)
         self.configure(fg_color=PALETA["fondo"])
+        aplicar_icono_ventana(self)
         self.transient(parent)
         self.grab_set()
         self.resizable(False, False)
@@ -115,12 +123,8 @@ class _DialogoTexto(ctk.CTkToplevel):
             text="Cancelar",
             height=40,
             font=fuente_normal(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._cancelar,
+            **kwargs_boton_secundario(),
         ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
         ctk.CTkButton(
@@ -128,10 +132,8 @@ class _DialogoTexto(ctk.CTkToplevel):
             text=texto_boton,
             height=40,
             font=fuente_boton(),
-            fg_color=PALETA["boton_primario"],
-            hover_color=PALETA["boton_primario_hover"],
-            text_color="#ffffff",
             command=self._confirmar,
+            **kwargs_boton_primario(),
         ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
 
         self.protocol("WM_DELETE_WINDOW", self._cancelar)
@@ -147,10 +149,7 @@ class _DialogoTexto(ctk.CTkToplevel):
 
     def _centrar(self, parent) -> None:
         """Centra el diálogo respecto al padre."""
-        self.update_idletasks()
-        px = parent.winfo_rootx() + (parent.winfo_width() - self.winfo_width()) // 2
-        py = parent.winfo_rooty() + (parent.winfo_height() - self.winfo_height()) // 2
-        self.geometry(f"+{max(0, px)}+{max(0, py)}")
+        centrar_ventana_sobre_padre(self, parent)
 
     def _cancelar(self) -> None:
         self._resultado = None
@@ -183,6 +182,7 @@ class _DialogoProducto(ctk.CTkToplevel):
         es_edicion = producto is not None
         self.title("Editar producto" if es_edicion else "Nuevo producto")
         self.configure(fg_color=PALETA["fondo"])
+        aplicar_icono_ventana(self)
         self.transient(parent)
         self.grab_set()
         self.resizable(False, False)
@@ -243,16 +243,11 @@ class _DialogoProducto(ctk.CTkToplevel):
             valores = [cat.nombre for cat in categorias]
             self._mapa_etiquetas = {cat.nombre: cat.id for cat in categorias}
 
-        self._menu_categoria = ctk.CTkOptionMenu(
+        self._menu_categoria = DesplegableProfesional(
             marco,
             values=valores,
             height=38,
             font=fuente_normal(),
-            fg_color=PALETA["entrada_fondo"],
-            button_color=PALETA["boton_primario"],
-            button_hover_color=PALETA["boton_primario_hover"],
-            text_color=PALETA["texto"],
-            dropdown_fg_color=PALETA["tarjeta"],
         )
         self._menu_categoria.grid(row=fila, column=0, padx=20, pady=(4, 16), sticky="ew")
         fila += 1
@@ -275,12 +270,8 @@ class _DialogoProducto(ctk.CTkToplevel):
             text="Cancelar",
             height=40,
             font=fuente_normal(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._cancelar,
+            **kwargs_boton_secundario(),
         ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
         ctk.CTkButton(
@@ -288,10 +279,8 @@ class _DialogoProducto(ctk.CTkToplevel):
             text="Guardar",
             height=40,
             font=fuente_boton(),
-            fg_color=PALETA["boton_primario"],
-            hover_color=PALETA["boton_primario_hover"],
-            text_color="#ffffff",
             command=self._confirmar,
+            **kwargs_boton_primario(),
         ).grid(row=0, column=1, sticky="ew", padx=(8, 0))
 
         self.protocol("WM_DELETE_WINDOW", self._cancelar)
@@ -306,10 +295,7 @@ class _DialogoProducto(ctk.CTkToplevel):
         return self._resultado
 
     def _centrar(self, parent) -> None:
-        self.update_idletasks()
-        px = parent.winfo_rootx() + (parent.winfo_width() - self.winfo_width()) // 2
-        py = parent.winfo_rooty() + (parent.winfo_height() - self.winfo_height()) // 2
-        self.geometry(f"+{max(0, px)}+{max(0, py)}")
+        centrar_ventana_sobre_padre(self, parent)
 
     def _cancelar(self) -> None:
         self._resultado = None
@@ -392,7 +378,7 @@ class VentanaMenu(ctk.CTkFrame):
         ).grid(row=0, column=0, padx=20, pady=(18, 8), sticky="w")
 
         filtro = ctk.CTkFrame(panel, fg_color="transparent")
-        filtro.grid(row=1, column=0, padx=16, pady=(0, 8), sticky="ew")
+        filtro.grid(row=1, column=0, padx=PADDING_PANEL_H, pady=(0, 8), sticky="ew")
         filtro.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
@@ -402,22 +388,17 @@ class VentanaMenu(ctk.CTkFrame):
             text_color=PALETA["texto_suave"],
         ).grid(row=0, column=0, padx=(4, 8), sticky="w")
 
-        self._menu_filtro = ctk.CTkOptionMenu(
+        self._menu_filtro = DesplegableProfesional(
             filtro,
             values=["Todas las categorías"],
             height=36,
             font=fuente_normal(),
-            fg_color=PALETA["entrada_fondo"],
-            button_color=PALETA["boton_primario"],
-            button_hover_color=PALETA["boton_primario_hover"],
-            text_color=PALETA["texto"],
-            dropdown_fg_color=PALETA["tarjeta"],
             command=self._al_cambiar_filtro,
         )
-        self._menu_filtro.grid(row=0, column=1, sticky="ew")
+        self._menu_filtro.grid(row=0, column=1, sticky="ew", padx=(0, 4))
 
         marco_tree = ctk.CTkFrame(panel, fg_color="transparent")
-        marco_tree.grid(row=2, column=0, padx=16, pady=(0, 8), sticky="nsew")
+        marco_tree.grid(row=2, column=0, padx=PADDING_PANEL_H, pady=(0, 8), sticky="nsew")
         marco_tree.grid_columnconfigure(0, weight=1)
         marco_tree.grid_rowconfigure(0, weight=1)
 
@@ -459,7 +440,7 @@ class VentanaMenu(ctk.CTkFrame):
         self._tree_productos.bind("<Double-Button-1>", lambda _e: self._accion_editar())
 
         paginacion = ctk.CTkFrame(panel, fg_color="transparent")
-        paginacion.grid(row=3, column=0, padx=16, pady=(0, 8), sticky="ew")
+        paginacion.grid(row=3, column=0, padx=PADDING_PANEL_H, pady=(0, 8), sticky="ew")
         paginacion.grid_columnconfigure(1, weight=1)
 
         self._btn_prod_ant = ctk.CTkButton(
@@ -468,12 +449,8 @@ class VentanaMenu(ctk.CTkFrame):
             width=100,
             height=32,
             font=fuente_pequena(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._pagina_productos_anterior,
+            **kwargs_boton_secundario(),
         )
         self._btn_prod_ant.grid(row=0, column=0, padx=(4, 8))
 
@@ -491,17 +468,13 @@ class VentanaMenu(ctk.CTkFrame):
             width=100,
             height=32,
             font=fuente_pequena(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._pagina_productos_siguiente,
+            **kwargs_boton_secundario(),
         )
         self._btn_prod_sig.grid(row=0, column=2, padx=(8, 4))
 
         acciones = ctk.CTkFrame(panel, fg_color="transparent")
-        acciones.grid(row=4, column=0, padx=16, pady=(0, 16), sticky="ew")
+        acciones.grid(row=4, column=0, padx=PADDING_PANEL_H, pady=(4, PADDING_PANEL_INFERIOR), sticky="ew")
         acciones.grid_columnconfigure((0, 1, 2), weight=1)
 
         self._btn_agregar = ctk.CTkButton(
@@ -509,10 +482,8 @@ class VentanaMenu(ctk.CTkFrame):
             text="+  Agregar producto",
             height=42,
             font=fuente_boton(),
-            fg_color=PALETA["boton_primario"],
-            hover_color=PALETA["boton_primario_hover"],
-            text_color="#ffffff",
             command=self._accion_agregar,
+            **kwargs_boton_primario(),
         )
         self._btn_agregar.grid(row=0, column=0, sticky="ew", padx=(0, 6))
 
@@ -521,13 +492,9 @@ class VentanaMenu(ctk.CTkFrame):
             text="Editar",
             height=42,
             font=fuente_normal(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._accion_editar,
             state="disabled",
+            **kwargs_boton_secundario(),
         )
         self._btn_editar.grid(row=0, column=1, sticky="ew", padx=6)
 
@@ -536,13 +503,9 @@ class VentanaMenu(ctk.CTkFrame):
             text="Activar / Desactivar",
             height=42,
             font=fuente_normal(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._accion_toggle_activo,
             state="disabled",
+            **kwargs_boton_secundario(),
         )
         self._btn_toggle_activo.grid(row=0, column=2, sticky="ew", padx=(6, 0))
 
@@ -567,7 +530,7 @@ class VentanaMenu(ctk.CTkFrame):
         ).grid(row=0, column=0, padx=20, pady=(18, 8), sticky="w")
 
         marco_tree = ctk.CTkFrame(panel, fg_color="transparent")
-        marco_tree.grid(row=1, column=0, padx=16, pady=(0, 8), sticky="nsew")
+        marco_tree.grid(row=1, column=0, padx=PADDING_PANEL_H, pady=(0, 8), sticky="nsew")
         marco_tree.grid_columnconfigure(0, weight=1)
         marco_tree.grid_rowconfigure(0, weight=1)
 
@@ -595,7 +558,7 @@ class VentanaMenu(ctk.CTkFrame):
         scroll.grid(row=0, column=1, sticky="ns")
 
         paginacion = ctk.CTkFrame(panel, fg_color="transparent")
-        paginacion.grid(row=2, column=0, padx=16, pady=(0, 8), sticky="ew")
+        paginacion.grid(row=2, column=0, padx=PADDING_PANEL_H, pady=(0, 8), sticky="ew")
         paginacion.grid_columnconfigure(1, weight=1)
 
         self._btn_cat_ant = ctk.CTkButton(
@@ -604,12 +567,8 @@ class VentanaMenu(ctk.CTkFrame):
             width=64,
             height=30,
             font=fuente_pequena(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._pagina_categorias_anterior,
+            **kwargs_boton_secundario(),
         )
         self._btn_cat_ant.grid(row=0, column=0, padx=(4, 6))
 
@@ -627,17 +586,13 @@ class VentanaMenu(ctk.CTkFrame):
             width=64,
             height=30,
             font=fuente_pequena(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._pagina_categorias_siguiente,
+            **kwargs_boton_secundario(),
         )
         self._btn_cat_sig.grid(row=0, column=2, padx=(6, 4))
 
         acciones = ctk.CTkFrame(panel, fg_color="transparent")
-        acciones.grid(row=3, column=0, padx=16, pady=(0, 16), sticky="ew")
+        acciones.grid(row=3, column=0, padx=PADDING_PANEL_H, pady=(4, PADDING_PANEL_INFERIOR), sticky="ew")
         acciones.grid_columnconfigure((0, 1), weight=1)
 
         ctk.CTkButton(
@@ -645,10 +600,8 @@ class VentanaMenu(ctk.CTkFrame):
             text="+  Nueva",
             height=40,
             font=fuente_normal(),
-            fg_color=PALETA["boton_primario"],
-            hover_color=PALETA["boton_primario_hover"],
-            text_color="#ffffff",
             command=self._accion_nueva_categoria,
+            **kwargs_boton_primario(),
         ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
 
         ctk.CTkButton(
@@ -656,12 +609,8 @@ class VentanaMenu(ctk.CTkFrame):
             text="Renombrar",
             height=40,
             font=fuente_normal(),
-            fg_color=PALETA["boton_accion"],
-            hover_color=PALETA["boton_accion_hover"],
-            text_color=PALETA["texto"],
-            border_width=1,
-            border_color=PALETA["boton_accion_borde"],
             command=self._accion_renombrar_categoria,
+            **kwargs_boton_secundario(),
         ).grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
     def refrescar(self) -> None:

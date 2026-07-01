@@ -58,9 +58,11 @@ class TestReporteDiario(_ReporteBdTemporal):
         con.execute(
             """INSERT INTO facturas
                (numero, pedido_id, mesa_id, fecha, hora, total, descuento,
-                metodo_pago, estado, es_parcial, grupo_division)
+                metodo_pago, estado, es_parcial, grupo_division,
+                comprador_nombre, comprador_identificacion)
                VALUES ('FAC-20260620-001', ?, 1, '2026-06-20', '13:00:00',
-                       21000, 1000, 'efectivo', 'pagada', 0, NULL)""",
+                       21000, 1000, 'efectivo', 'pagada', 0, NULL,
+                       'Juan Pérez', '123456')""",
             (pedido_id,),
         )
         con.execute(
@@ -82,16 +84,19 @@ class TestReporteDiario(_ReporteBdTemporal):
         self.assertEqual(reporte["fecha"], "2026-06-20")
         self.assertEqual(reporte["total_ventas"], 20000)
         self.assertEqual(reporte["numero_facturas"], 1)
-        self.assertEqual(len(reporte["ventas_por_producto"]), 2)
+        self.assertEqual(len(reporte["detalle_ventas"]), 2)
         self.assertTrue(reporte["cierre_registrado"])
         self.assertTrue(db_manager.existe_cierre_diario("2026-06-20"))
 
-        productos = {
-            item["nombre_producto"]: item for item in reporte["ventas_por_producto"]
-        }
-        self.assertEqual(productos["Bandeja"]["cantidad"], 1)
-        self.assertEqual(productos["Bandeja"]["subtotal"], 18000)
-        self.assertEqual(productos["Jugo"]["cantidad"], 1)
+        self.assertEqual(reporte["totales_por_metodo_pago"]["efectivo"], 20000)
+        self.assertEqual(reporte["totales_por_metodo_pago"]["nequi"], 0)
+
+        renglones = reporte["detalle_ventas"]
+        self.assertEqual(renglones[0]["factura_numero"], "FAC-20260620-001")
+        self.assertEqual(renglones[0]["metodo_pago"], "efectivo")
+        self.assertEqual(renglones[0]["comprador_nombre"], "Juan Pérez")
+        self.assertEqual(renglones[0]["nombre_producto"], "Bandeja")
+        self.assertEqual(renglones[1]["nombre_producto"], "Jugo")
 
     def test_reporte_diario_no_duplica_cierre(self):
         reporte_service.reporte_diario("2026-06-20")
